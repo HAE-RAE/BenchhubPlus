@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: benchhub_postgres_dev
+    environment:
+      POSTGRES_DB: benchhub_plus_dev
+      POSTGRES_USER: benchhub
+      POSTGRES_PASSWORD: dev_password
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U benchhub -d benchhub_plus_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for Celery
+  redis:
+    image: redis:7-alpine
+    container_name: benchhub_redis_dev
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_dev_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # FastAPI Backend (Development)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: benchhub_backend_dev
+    environment:
+      - DATABASE_URL=postgresql://benchhub:dev_password@postgres:5432/benchhub_plus_dev
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - DEBUG=true
+      - LOG_LEVEL=debug
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app  # Mount source code for development
+      - ./logs:/app/logs
+    command: ["python", "-m", "uvicorn", "apps.backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Celery Worker (Development)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: benchhub_worker_dev
+    environment:
+      - DATABASE_URL=postgresql://benchhub:dev_password@postgres:5432/benchhub_plus_dev
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DEBUG=true
+      - LOG_LEVEL=debug
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app  # Mount source code for development
+      - ./logs:/app/logs
+      - /tmp:/tmp
+    command: ["python", "-m", "celery", "worker", "-A", "apps.worker.celery_app", "--loglevel=debug", "--concurrency=1"]
+
+  # Streamlit Frontend (Development)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: benchhub_frontend_dev
+    environment:
+      - API_BASE_URL=http://localhost:8001
+    ports:
+      - "8502:8501"
+    depends_on:
+      - backend
+    volumes:
+      - .:/app  # Mount source code for development
+    command: ["streamlit", "run", "apps/frontend/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.enableCORS=false", "--server.enableXsrfProtection=false", "--server.runOnSave=true"]
+
+  # Celery Flower (Development)
+  flower:
+    image: mher/flower:0.9.7
+    container_name: benchhub_flower_dev
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - FLOWER_PORT=5555
+    ports:
+      - "5556:5555"
+    depends_on:
+      - redis
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+
+networks:
+  default:
+    name: benchhub_dev_network
