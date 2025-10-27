@@ -1,0 +1,18 @@
+datasets:
+- name: benchhub
+  params:
+    language: ko
+    problem_types:
+    - multiple_choice
+    task_types:
+    - qa
+  split: test
+metadata:
+  description: Example evaluation plan for HRET integration
+  evaluation_method: string_match
+  few_shot_num: 0
+  language_penalize: true
+  name: HRET Integration Example
+  sample_size: 100
+  target_lang: ko
+version: '1.0'

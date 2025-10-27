@@ -70,7 +70,7 @@ class TaskStatus(BaseModel):
     """Task status information."""
     
     task_id: str
-    status: str = Field(..., regex="^(PENDING|STARTED|SUCCESS|FAILURE)$")
+    status: str = Field(..., pattern="^(PENDING|STARTED|SUCCESS|FAILURE)$")
     plan_details: Optional[str] = None
     result: Optional[str] = None
     error_message: Optional[str] = None

@@ -1,0 +1,25 @@
+dataset:
+  name: benchhub
+  params:
+    language: ko
+  split: test
+evaluation:
+  method: string_match
+  params: {}
+few_shot:
+  example_template: 'Q: {input}
+
+    A: {reference}'
+  instruction: Use the following examples to answer the question.
+  num: 0
+  split: null
+language_penalize: true
+model:
+  name: openai
+  params:
+    api_base: https://api.openai.com/v1
+    api_key: test-key
+    model: gpt-3.5-turbo
+    model_name_or_path: gpt-3.5-turbo
+    temperature: 0.0
+target_lang: ko

@@ -46,7 +46,12 @@ dependencies = [
     
     # LLM Integration
     "openai>=1.3.0",
-    "litellm>=1.0.0",
+    "litellm>=1.75.0",
+    "transformers>=4.20.0",
+    "torch>=2.0.0",
+    "datasets>=3.2.0",
+    "accelerate>=0.20.0",
+    "vllm>=0.4.0",
     
     # Data Processing
     "pandas>=2.1.0",
@@ -63,9 +68,14 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4",
     "python-dotenv>=1.0.0",
     "typer>=0.9.0",
+    "tqdm>=4.64.0",
+    "langdetect>=1.0.9",
+    "scikit-learn>=1.1.0",
+    "spacy>=3.4.0",
     
-    # Evaluation (placeholder - will be replaced with actual HRET)
-    # "haerae-evaluation-toolkit>=1.0.0",  # TODO: Add when available
+    # Evaluation - HRET Integration
+    # Note: Using local path for development, change to PyPI when published
+    # "haerae-evaluation-toolkit>=1.0.0",
 ]
 
 [project.optional-dependencies]
