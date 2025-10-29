@@ -95,7 +95,7 @@ curl http://localhost:12000/api/v1/health
 - Backend API: http://localhost:12000
 - API Documentation: http://localhost:12000/docs
 
-📖 **For detailed setup instructions, troubleshooting, and production deployment, see [Setup Guide](./docs/SETUP_GUIDE.md)**
+📖 **For detailed setup instructions, troubleshooting, and production deployment, see the Setup Guide ([English](./docs/eng/SETUP_GUIDE.md) | [한국어](./docs/kor/SETUP_GUIDE.md))**
 
 ## 🎯 Usage Example
 
@@ -166,21 +166,23 @@ curl http://localhost:12000/api/v1/health
 
 ## 📚 Documentation
 
+Documentation is available in both **English** (`docs/eng`) and **한국어** (`docs/kor`).
+
 ### Getting Started
-- [📖 Installation Guide](docs/installation.md) - Complete setup instructions
-- [🚀 Quick Start](docs/quickstart.md) - Get running in 5 minutes
-- [👤 User Manual](docs/user-manual.md) - Complete user guide
+- [📖 Installation Guide (EN)](docs/eng/installation.md) · [KO](docs/kor/installation.md) - Complete setup instructions
+- [🚀 Quick Start (EN)](docs/eng/quickstart.md) · [KO](docs/kor/quickstart.md) - Get running in 5 minutes
+- [👤 User Manual (EN)](docs/eng/user-manual.md) · [KO](docs/kor/user-manual.md) - Complete user guide
 
 ### Development
-- [🔧 Development Guide](docs/development.md) - Development setup and guidelines
-- [🏗️ Architecture](docs/architecture.md) - System design and architecture
-- [🐳 Docker Deployment](docs/docker-deployment.md) - Container deployment guide
+- [🔧 Development Guide (EN)](docs/eng/development.md) · [KO](docs/kor/development.md) - Development setup and guidelines
+- [🏗️ Architecture (EN)](docs/eng/architecture.md) · [KO](docs/kor/architecture.md) - System design and architecture
+- [🐳 Docker Deployment (EN)](docs/eng/docker-deployment.md) · [KO](docs/kor/docker-deployment.md) - Container deployment guide
 
 ### Reference
-- [📡 API Reference](docs/api-reference.md) - REST API documentation
-- [🔧 BenchHub Configuration](docs/BENCHHUB_CONFIG.md) - BenchHub dataset configuration guide
-- [🔗 HRET Integration](docs/HRET_INTEGRATION.md) - HRET toolkit integration guide
-- [🚨 Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
+- [📡 API Reference (EN)](docs/eng/api-reference.md) · [KO](docs/kor/api-reference.md) - REST API documentation
+- [🔧 BenchHub Configuration (EN)](docs/eng/BENCHHUB_CONFIG.md) · [KO](docs/kor/BENCHHUB_CONFIG.md) - BenchHub dataset configuration guide
+- [🔗 HRET Integration (EN)](docs/eng/HRET_INTEGRATION.md) · [KO](docs/kor/HRET_INTEGRATION.md) - HRET toolkit integration guide
+- [🚨 Troubleshooting (EN)](docs/eng/troubleshooting.md) · [KO](docs/kor/troubleshooting.md) - Common issues and solutions
 
 ## 🛠️ Technology Stack
 
