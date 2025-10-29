@@ -76,8 +76,3 @@ BenchHub Plus is a comprehensive evaluation platform that:
 
 This project is licensed under the MIT License - see the [LICENSE](../LICENSE) file for details.
 
-## 🙏 Acknowledgments
-
-- HRET Toolkit team for evaluation framework
-- OpenAI for language model capabilities
-- FastAPI and Streamlit communities for excellent frameworks

@@ -76,8 +76,4 @@ BenchHub Plus는 다음과 같은 흐름으로 동작합니다.
 
 이 프로젝트는 MIT License를 따릅니다. 자세한 내용은 [LICENSE](../LICENSE) 파일을 참고하세요.
 
-## 🙏 감사의 말
 
-- 평가 프레임워크를 제공한 HRET Toolkit 팀
-- 언어 모델 기능을 제공한 OpenAI
-- 훌륭한 프레임워크를 제공한 FastAPI 및 Streamlit 커뮤니티

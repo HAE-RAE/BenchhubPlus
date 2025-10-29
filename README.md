@@ -283,12 +283,12 @@ isort apps/
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🙏 Acknowledgments
+## 🙏  Contributors
 
-- **HRET Toolkit**: Evaluation framework foundation
-- **OpenAI**: Language model capabilities
-- **FastAPI & Streamlit**: Excellent web frameworks
-- **Open Source Community**: Various libraries and tools
+- Hanwool Lee — [h-albert-lee](https://github.com/h-albert-lee)
+- Eunsu Kim — [rladmstn1714](https://github.com/rladmstn1714)
+- Joonyong Park — [JoonYong-Park](https://github.com/JoonYong-Park)
+- Hyunwoo Oh - [hw-oh](https://github.com/hw-oh)
 
 ## 📞 Support
 
@@ -297,10 +297,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **GitHub Discussions**: Questions and community help
 - **Documentation**: Comprehensive guides and references
 
-### Professional Support
-- **Enterprise Support**: Available for production deployments
-- **Custom Development**: Tailored solutions and integrations
-- **Training**: Team training and onboarding
 
 ---
 
