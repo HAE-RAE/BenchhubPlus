@@ -36,51 +36,66 @@ An interactive leaderboard system for dynamic LLM evaluation that converts natur
 
 ## 🚀 Quick Start
 
-### Option 1: Docker (Recommended)
+### Prerequisites
+- Python 3.8+
+- Git
+- OpenAI API key (or other LLM provider API key)
+
+### Installation & Setup
 
 ```bash
 # Clone repository
 git clone https://github.com/HAE-RAE/BenchhubPlus.git
 cd BenchhubPlus
 
-# Setup and deploy
-./scripts/setup.sh
-cp .env.example .env
-# Edit .env with your API keys
-./scripts/deploy.sh development
+# Install dependencies
+pip install -r requirements.txt
+pip install streamlit-option-menu
+
+# Setup environment
+cat > .env << EOF
+OPENAI_API_KEY=your_openai_api_key_here
+DEFAULT_MODEL=gpt-3.5-turbo
+API_BASE_URL=http://localhost:12000
+FRONTEND_PORT=12001
+BACKEND_PORT=12000
+REDIS_PORT=6379
+DATABASE_URL=sqlite:///./benchhub_plus.db
+CELERY_BROKER_URL=redis://localhost:6379/0
+CELERY_RESULT_BACKEND=redis://localhost:6379/0
+EOF
+
+# Install and start Redis
+sudo apt update && sudo apt install redis-server
+sudo systemctl start redis-server
+
+# Initialize database
+python -c "from apps.backend.database import engine, Base; from apps.backend.models import *; Base.metadata.create_all(bind=engine)"
+mkdir -p logs
+```
+
+### Start Services (4 terminals required)
+
+```bash
+# Terminal 1: Backend API
+python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 12000 --reload
+
+# Terminal 2: Frontend UI
+streamlit run apps/frontend/streamlit_app.py --server.port 12001 --server.address 0.0.0.0
+
+# Terminal 3: Celery Worker
+celery -A apps.backend.celery_app worker --loglevel=info --concurrency=4
+
+# Terminal 4: Verify services
+curl http://localhost:12000/api/v1/health
 ```
 
 **Access Points:**
-- Frontend: http://localhost:8502
-- Backend API: http://localhost:8001
-- API Docs: http://localhost:8001/docs
+- Frontend UI: http://localhost:12001
+- Backend API: http://localhost:12000
+- API Documentation: http://localhost:12000/docs
 
-### Option 2: Local Development
-
-```bash
-# Clone and setup
-git clone https://github.com/HAE-RAE/BenchhubPlus.git
-cd BenchhubPlus
-
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -e .
-
-# Setup database and Redis
-# (See installation guide for details)
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your settings
-
-# Start services
-./scripts/dev-backend.sh    # Terminal 1
-./scripts/dev-worker.sh     # Terminal 2
-./scripts/dev-frontend.sh   # Terminal 3
-```
+📖 **For detailed setup instructions, troubleshooting, and production deployment, see [Setup Guide](./docs/SETUP_GUIDE.md)**
 
 ## 🎯 Usage Example
 
