@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from ...core.db import LeaderboardCache
+
 from ...core.plan.planner import PlannerAgent, create_planner_agent
 from ...core.schemas import (
     LeaderboardQuery,
@@ -309,16 +311,18 @@ class EvaluationOrchestrator:
     
     def get_system_stats(self) -> Dict[str, Any]:
         """Get system statistics."""
-        
+
         task_stats = self.tasks_repo.get_task_stats()
-        
+
         # Get cache statistics
         from sqlalchemy import func
-        cache_count = self.db.query(func.count(self.leaderboard_repo.db.query(LeaderboardCache).subquery().c.model_name)).scalar()
-        
+        cache_count = self.db.query(func.count(LeaderboardCache.model_name)).scalar()
+        if cache_count is None:
+            cache_count = 0
+
         return {
             "tasks": task_stats,
-            "cache_entries": cache_count or 0,
+            "cache_entries": cache_count,
             "planner_available": self.planner_agent is not None,
             "timestamp": datetime.utcnow()
         }
