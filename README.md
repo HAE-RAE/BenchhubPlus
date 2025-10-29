@@ -36,66 +36,67 @@ An interactive leaderboard system for dynamic LLM evaluation that converts natur
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Python 3.8+
-- Git
-- OpenAI API key (or other LLM provider API key)
+### Recommended: Docker-based setup
 
-### Installation & Setup
+1. **Install prerequisites**
+   - Git
+   - Docker and Docker Compose
+   - An OpenAI API key (or another supported model provider key)
+
+2. **Clone the repository and create your environment file**
+
+   ```bash
+   git clone https://github.com/HAE-RAE/BenchhubPlus.git
+   cd BenchhubPlus
+   cp .env.example .env
+   ```
+
+3. **Fill in the required variables**
+   - `OPENAI_API_KEY`: your model provider key
+   - `POSTGRES_PASSWORD`: choose a strong password for the bundled PostgreSQL database
+   - Adjust any other values (ports, planner model, etc.) if needed
+
+4. **Launch the full stack**
+
+   ```bash
+   ./scripts/deploy.sh development
+   ```
+
+   The helper script builds the images, starts `docker-compose.dev.yml`, and waits for the services to report healthy.
+
+5. **Open the application**
+   - Frontend UI: http://localhost:8502
+   - Backend API: http://localhost:8001
+   - API documentation: http://localhost:8001/docs
+   - Flower (Celery dashboard): http://localhost:5556
+
+6. **Verify everything is running**
+
+   ```bash
+   curl http://localhost:8001/api/v1/health
+   ```
+
+7. **Shut down when finished**
+
+   ```bash
+   docker-compose -f docker-compose.dev.yml down
+   ```
+
+### Alternative: Local Python environment
+
+For contributors who prefer not to use Docker:
 
 ```bash
-# Clone repository
-git clone https://github.com/HAE-RAE/BenchhubPlus.git
-cd BenchhubPlus
-
-# Install dependencies
-pip install -r requirements.txt
-pip install streamlit-option-menu
-
-# Setup environment
-cat > .env << EOF
-OPENAI_API_KEY=your_openai_api_key_here
-DEFAULT_MODEL=gpt-3.5-turbo
-API_BASE_URL=http://localhost:12000
-FRONTEND_PORT=12001
-BACKEND_PORT=12000
-REDIS_PORT=6379
-DATABASE_URL=sqlite:///./benchhub_plus.db
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-EOF
-
-# Install and start Redis
-sudo apt update && sudo apt install redis-server
-sudo systemctl start redis-server
-
-# Initialize database
-python -c "from apps.backend.database import engine, Base; from apps.backend.models import *; Base.metadata.create_all(bind=engine)"
-mkdir -p logs
+./scripts/setup.sh         # creates a Python 3.11 virtualenv and installs dependencies
+source venv/bin/activate
+python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
+streamlit run apps/frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+celery -A apps.worker.celery_app worker --loglevel=info
 ```
 
-### Start Services (4 terminals required)
+You will also need local PostgreSQL and Redis instances that match the connection settings in `.env`.
 
-```bash
-# Terminal 1: Backend API
-python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 12000 --reload
-
-# Terminal 2: Frontend UI
-streamlit run apps/frontend/streamlit_app.py --server.port 12001 --server.address 0.0.0.0
-
-# Terminal 3: Celery Worker
-celery -A apps.backend.celery_app worker --loglevel=info --concurrency=4
-
-# Terminal 4: Verify services
-curl http://localhost:12000/api/v1/health
-```
-
-**Access Points:**
-- Frontend UI: http://localhost:12001
-- Backend API: http://localhost:12000
-- API Documentation: http://localhost:12000/docs
-
-📖 **For detailed setup instructions, troubleshooting, and production deployment, see the Setup Guide ([English](./docs/eng/SETUP_GUIDE.md) | [한국어](./docs/kor/SETUP_GUIDE.md))**
+📖 **Need more detail?** The [Quick Start Guide](./docs/eng/quickstart.md) walks through the process with screenshots and tips, and the [User Manual](./docs/eng/user-manual.md) explains how to operate the app end to end. Setup guides are also available ([English](./docs/eng/SETUP_GUIDE.md) | [한국어](./docs/kor/SETUP_GUIDE.md)).
 
 ## 🎯 Usage Example
 

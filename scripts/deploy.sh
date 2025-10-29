@@ -64,9 +64,13 @@ done
 if [ "$ENVIRONMENT" = "development" ]; then
     COMPOSE_FILE="docker-compose.dev.yml"
     echo -e "${YELLOW}🔧 Using development configuration${NC}"
+    HOST_BACKEND_PORT=8001
+    HOST_FRONTEND_PORT=8502
 else
     COMPOSE_FILE="docker-compose.yml"
     echo -e "${GREEN}🏭 Using production configuration${NC}"
+    HOST_BACKEND_PORT=8000
+    HOST_FRONTEND_PORT=8501
 fi
 
 # Stop existing containers
@@ -107,14 +111,14 @@ else
 fi
 
 # Check Backend API
-if curl -f http://localhost:8000/api/v1/health > /dev/null 2>&1; then
+if curl -f http://localhost:${HOST_BACKEND_PORT}/api/v1/health > /dev/null 2>&1; then
     echo -e "${GREEN}✅ Backend API is ready${NC}"
 else
     echo -e "${RED}❌ Backend API is not ready${NC}"
 fi
 
 # Check Frontend
-if curl -f http://localhost:8501/_stcore/health > /dev/null 2>&1; then
+if curl -f http://localhost:${HOST_FRONTEND_PORT}/_stcore/health > /dev/null 2>&1; then
     echo -e "${GREEN}✅ Frontend is ready${NC}"
 else
     echo -e "${RED}❌ Frontend is not ready${NC}"
