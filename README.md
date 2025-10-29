@@ -232,20 +232,6 @@ Currently supported model providers:
 - **Hugging Face**: Various open-source models
 - **Custom**: Extensible for any API-compatible model
 
-## 📊 Evaluation Metrics
-
-### Built-in Metrics
-- **Accuracy**: Exact match accuracy
-- **F1 Score**: Harmonic mean of precision and recall
-- **Semantic Similarity**: Embedding-based similarity
-- **BLEU Score**: N-gram based similarity
-- **Custom Metrics**: Define your own evaluation criteria
-
-### Statistical Analysis
-- **Significance Testing**: Statistical significance of differences
-- **Confidence Intervals**: Uncertainty quantification
-- **Effect Size**: Practical significance measurement
-
 ## 🤝 Contributing
 
 We welcome contributions! Please see our [Contributing Guide](docs/contributing.md) for details.
