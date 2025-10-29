@@ -1,0 +1,84 @@
+# Default HRET Configuration for BenchhubPlus
+# This file contains default settings for HRET integration
+
+# Default evaluation settings
+default_dataset: "benchhub"
+default_model: "litellm"
+default_split: "test"
+default_evaluation_method: "string_match"
+
+# MLOps integration settings
+mlflow_tracking: false
+wandb_tracking: false
+tensorboard_tracking: false
+
+# Logging and output settings
+log_level: "INFO"
+output_dir: "./hret_results"
+auto_save_results: true
+
+# Performance settings
+batch_size: null  # null means use default
+max_workers: null  # null means use default
+
+# Advanced settings
+custom_loggers: []
+
+# BenchhubPlus specific settings
+benchhub_integration:
+  store_sample_results: true
+  cleanup_temp_files: true
+  timeout_seconds: 1800  # 30 minutes
+  retry_attempts: 3
+  
+# Dataset-specific configurations
+dataset_configs:
+  benchhub:
+    language: "ko"
+    chunk_size: 1000
+    problem_types: null  # null means all types
+    task_types: null     # null means all types
+    
+  kmmlu:
+    language: "ko"
+    subset: null
+    
+  haerae_bench:
+    language: "ko"
+    subset: null
+
+# Model-specific configurations
+model_configs:
+  openai:
+    temperature: 0.0
+    max_tokens: 1024
+    top_p: 1.0
+    
+  litellm:
+    temperature: 0.0
+    max_tokens: 1024
+    
+  huggingface:
+    device: "auto"
+    torch_dtype: "auto"
+    trust_remote_code: true
+    
+  vllm:
+    tensor_parallel_size: 1
+    gpu_memory_utilization: 0.9
+
+# Evaluation method configurations
+evaluation_configs:
+  string_match:
+    case_sensitive: false
+    normalize_whitespace: true
+    
+  llm_judge:
+    judge_model: "gpt-4"
+    temperature: 0.0
+    
+  partial_match:
+    threshold: 0.8
+    
+  math_eval:
+    tolerance: 1e-6

@@ -3,11 +3,22 @@
 import json
 import logging
 import os
-import subprocess
 import tempfile
 import time
 from typing import Any, Dict, List, Optional
 import yaml
+from datetime import datetime
+
+# HRET imports
+try:
+    from llm_eval.evaluator import Evaluator
+    from llm_eval.runner import PipelineRunner, PipelineConfig
+    from llm_eval.utils.util import EvaluationResult
+    from llm_eval.utils.logging import get_logger as get_hret_logger
+    HRET_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"HRET not available: {e}")
+    HRET_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +28,12 @@ class HRETRunner:
     
     def __init__(self, config_path: Optional[str] = None):
         """Initialize HRET runner."""
+        if not HRET_AVAILABLE:
+            raise RuntimeError("HRET is not available. Please install haerae-evaluation-toolkit.")
+        
         self.config_path = config_path
         self.temp_dir = tempfile.mkdtemp(prefix="benchhub_plus_")
+        self.hret_logger = get_hret_logger(name="benchhub_hret", level=logging.INFO)
         logger.info(f"HRET runner initialized with temp dir: {self.temp_dir}")
     
     def run_evaluation(
@@ -30,25 +45,16 @@ class HRETRunner:
         """Run evaluation using HRET."""
         
         try:
-            # TODO: This is a placeholder implementation
-            # In a real implementation, this would:
-            # 1. Write plan.yaml to temp file
-            # 2. Replace API keys in the plan
-            # 3. Execute HRET with the plan
-            # 4. Parse and return results
-            
             logger.info("Starting HRET evaluation...")
             
-            # Write plan to temporary file
-            plan_file = os.path.join(self.temp_dir, "plan.yaml")
-            with open(plan_file, "w", encoding="utf-8") as f:
-                f.write(plan_yaml)
+            # Parse plan YAML
+            plan_data = yaml.safe_load(plan_yaml)
             
-            # Replace API keys in plan
-            self._inject_api_keys(plan_file, models)
+            # Convert BenchhubPlus plan to HRET configuration
+            hret_configs = self._convert_plan_to_hret_configs(plan_data, models)
             
-            # Simulate HRET execution (placeholder)
-            results = self._simulate_hret_execution(plan_file, models, timeout)
+            # Run evaluations for each model
+            results = self._run_hret_evaluations(hret_configs, timeout)
             
             logger.info("HRET evaluation completed successfully")
             return results
@@ -60,150 +66,245 @@ class HRETRunner:
             # Cleanup temporary files
             self._cleanup()
     
-    def _inject_api_keys(self, plan_file: str, models: List[Dict[str, Any]]) -> None:
-        """Inject API keys into plan file."""
+    def _convert_plan_to_hret_configs(
+        self, 
+        plan_data: Dict[str, Any], 
+        models: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Convert BenchhubPlus plan to HRET configuration format."""
         
-        try:
-            with open(plan_file, "r", encoding="utf-8") as f:
-                plan_data = yaml.safe_load(f)
+        hret_configs = []
+        metadata = plan_data.get("metadata", {})
+        datasets = plan_data.get("datasets", [])
+        
+        for model in models:
+            # Determine model backend based on model type
+            model_backend = self._get_hret_model_backend(model)
             
-            # Create mapping of model names to API keys
-            api_key_map = {model["name"]: model["api_key"] for model in models}
-            
-            # Update plan with actual API keys
-            for model_config in plan_data.get("models", []):
-                model_name = model_config.get("name")
-                if model_name in api_key_map:
-                    model_config["api_key"] = api_key_map[model_name]
-            
-            # Write updated plan back to file
-            with open(plan_file, "w", encoding="utf-8") as f:
-                yaml.dump(plan_data, f, default_flow_style=False, allow_unicode=True)
-            
-            logger.info("API keys injected into plan file")
-            
-        except Exception as e:
-            logger.error(f"Failed to inject API keys: {e}")
-            raise
+            # Create HRET configuration for each dataset
+            for dataset_config in datasets:
+                config = {
+                    "dataset": {
+                        "name": dataset_config.get("name", "benchhub"),
+                        "split": dataset_config.get("split", "test"),
+                        "params": dataset_config.get("params", {})
+                    },
+                    "model": {
+                        "name": model_backend,
+                        "params": self._get_model_params(model)
+                    },
+                    "evaluation": {
+                        "method": metadata.get("evaluation_method", "string_match"),
+                        "params": {}
+                    },
+                    "language_penalize": metadata.get("language_penalize", True),
+                    "target_lang": metadata.get("target_lang", "ko"),
+                    "few_shot": {
+                        "num": metadata.get("few_shot_num", 0)
+                    },
+                    "model_info": model,
+                    "dataset_info": dataset_config
+                }
+                hret_configs.append(config)
+        
+        return hret_configs
     
-    def _simulate_hret_execution(
-        self,
-        plan_file: str,
-        models: List[Dict[str, Any]],
+    def _get_hret_model_backend(self, model: Dict[str, Any]) -> str:
+        """Determine HRET model backend based on model configuration."""
+        
+        model_type = model.get("model_type", "").lower()
+        api_base = model.get("api_base", "").lower()
+        
+        # Map model types to HRET backends
+        if "openai" in model_type or "openai" in api_base:
+            return "openai"
+        elif "huggingface" in model_type or "hf" in model_type:
+            return "huggingface"
+        elif "litellm" in model_type:
+            return "litellm"
+        elif "vllm" in model_type:
+            return "vllm"
+        else:
+            # Default to litellm for API-based models
+            return "litellm"
+    
+    def _get_model_params(self, model: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract model parameters for HRET."""
+        
+        params = {}
+        
+        # Common parameters
+        if "api_key" in model:
+            params["api_key"] = model["api_key"]
+        if "api_base" in model:
+            params["api_base"] = model["api_base"]
+        if "model_name" in model:
+            params["model_name_or_path"] = model["model_name"]
+        
+        # Model-specific parameters
+        model_type = model.get("model_type", "").lower()
+        
+        if "openai" in model_type:
+            params.update({
+                "model": model.get("model_name", "gpt-3.5-turbo"),
+                "temperature": model.get("temperature", 0.0),
+                "max_tokens": model.get("max_tokens", 1024)
+            })
+        elif "huggingface" in model_type:
+            params.update({
+                "model_name_or_path": model.get("model_name", "gpt2"),
+                "device": model.get("device", "auto"),
+                "torch_dtype": model.get("torch_dtype", "auto")
+            })
+        elif "litellm" in model_type:
+            params.update({
+                "model": model.get("model_name", "gpt-3.5-turbo"),
+                "api_base": model.get("api_base"),
+                "api_key": model.get("api_key"),
+                "temperature": model.get("temperature", 0.0)
+            })
+        
+        return params
+    
+    def _run_hret_evaluations(
+        self, 
+        hret_configs: List[Dict[str, Any]], 
         timeout: int
     ) -> Dict[str, Any]:
-        """Simulate HRET execution (placeholder implementation)."""
+        """Run HRET evaluations for all configurations."""
         
-        # TODO: Replace this with actual HRET execution
-        # This is a placeholder that simulates evaluation results
-        
-        logger.info("Simulating HRET execution...")
-        
-        # Simulate processing time
-        time.sleep(2)
-        
-        # Load plan to get configuration
-        with open(plan_file, "r", encoding="utf-8") as f:
-            plan_data = yaml.safe_load(f)
-        
-        metadata = plan_data.get("metadata", {})
-        sample_size = metadata.get("sample_size", 100)
-        
-        # Generate simulated results for each model
         results = {
             "metadata": {
-                "plan_file": plan_file,
-                "execution_time": 2.0,
-                "sample_size": sample_size,
-                "timestamp": time.time()
+                "execution_time": 0.0,
+                "timestamp": datetime.utcnow().isoformat(),
+                "total_configs": len(hret_configs)
             },
             "model_results": []
         }
         
-        for model in models:
-            # Simulate evaluation results
-            import random
-            random.seed(42)  # For reproducible results
-            
-            # Simulate correctness scores
-            correctness_scores = [random.uniform(0.3, 0.9) for _ in range(sample_size)]
-            average_score = sum(correctness_scores) / len(correctness_scores)
-            
-            model_result = {
-                "model_name": model["name"],
-                "total_samples": sample_size,
-                "correct_samples": sum(1 for score in correctness_scores if score > 0.5),
-                "accuracy": sum(1 for score in correctness_scores if score > 0.5) / sample_size,
-                "average_score": average_score,
-                "execution_time": random.uniform(1.0, 3.0),
-                "metadata": {
-                    "api_base": model["api_base"],
-                    "model_type": model.get("model_type", "openai")
-                }
-            }
-            
-            results["model_results"].append(model_result)
-            
-            # Generate sample-level results for database storage
-            self._generate_sample_results(
-                model["name"],
-                correctness_scores,
-                metadata
-            )
+        start_time = time.time()
         
-        logger.info(f"Generated simulated results for {len(models)} models")
+        for config in hret_configs:
+            try:
+                logger.info(f"Running evaluation for model: {config['model_info']['name']}")
+                
+                # Create HRET Evaluator
+                evaluator = Evaluator()
+                
+                # Run evaluation
+                evaluation_result = evaluator.run(
+                    model=config["model"]["name"],
+                    dataset=config["dataset"]["name"],
+                    split=config["dataset"]["split"],
+                    dataset_params=config["dataset"]["params"],
+                    model_params=config["model"]["params"],
+                    evaluation_method=config["evaluation"]["method"],
+                    evaluator_params=config["evaluation"]["params"],
+                    language_penalize=config["language_penalize"],
+                    target_lang=config["target_lang"],
+                    few_shot=config["few_shot"]
+                )
+                
+                # Convert HRET result to BenchhubPlus format
+                model_result = self._convert_hret_result(
+                    evaluation_result, 
+                    config["model_info"], 
+                    config["dataset_info"]
+                )
+                
+                results["model_results"].append(model_result)
+                
+                # Generate sample-level results for database storage
+                self._generate_sample_results_from_hret(
+                    evaluation_result,
+                    config["model_info"],
+                    config["dataset_info"]
+                )
+                
+            except Exception as e:
+                logger.error(f"Failed to evaluate model {config['model_info']['name']}: {e}")
+                # Add error result
+                error_result = {
+                    "model_name": config["model_info"]["name"],
+                    "error": str(e),
+                    "total_samples": 0,
+                    "correct_samples": 0,
+                    "accuracy": 0.0,
+                    "average_score": 0.0,
+                    "execution_time": 0.0,
+                    "metadata": config["model_info"]
+                }
+                results["model_results"].append(error_result)
+        
+        results["metadata"]["execution_time"] = time.time() - start_time
         return results
     
-    def _generate_sample_results(
+    def _convert_hret_result(
+        self, 
+        hret_result: EvaluationResult, 
+        model_info: Dict[str, Any],
+        dataset_info: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Convert HRET EvaluationResult to BenchhubPlus format."""
+        
+        # Extract metrics from HRET result
+        metrics = hret_result.metrics if hasattr(hret_result, 'metrics') else {}
+        
+        return {
+            "model_name": model_info["name"],
+            "total_samples": metrics.get("total_samples", 0),
+            "correct_samples": metrics.get("correct_samples", 0),
+            "accuracy": metrics.get("accuracy", 0.0),
+            "average_score": metrics.get("average_score", 0.0),
+            "execution_time": metrics.get("execution_time", 0.0),
+            "metadata": {
+                "api_base": model_info.get("api_base"),
+                "model_type": model_info.get("model_type"),
+                "dataset_name": dataset_info.get("name"),
+                "dataset_split": dataset_info.get("split"),
+                "hret_metrics": metrics
+            }
+        }
+    
+    def _generate_sample_results_from_hret(
         self,
-        model_name: str,
-        correctness_scores: List[float],
-        metadata: Dict[str, Any]
+        hret_result: EvaluationResult,
+        model_info: Dict[str, Any],
+        dataset_info: Dict[str, Any]
     ) -> List[Dict[str, Any]]:
-        """Generate sample-level results for database storage."""
+        """Generate sample-level results from HRET evaluation for database storage."""
         
         sample_results = []
         
-        for i, score in enumerate(correctness_scores):
+        # Extract sample data from HRET result
+        samples = getattr(hret_result, 'samples', []) if hasattr(hret_result, 'samples') else []
+        
+        for i, sample in enumerate(samples):
             sample_result = {
-                "prompt": f"Sample prompt {i+1} for {model_name}",
-                "answer": f"Sample answer {i+1} from {model_name}",
-                "skill_label": metadata.get("task_type", "QA"),
-                "target_label": metadata.get("language", "English"),
-                "subject_label": metadata.get("subject_type", "General"),
+                "prompt": sample.get("input", f"Sample prompt {i+1}"),
+                "answer": sample.get("prediction", f"Sample answer {i+1}"),
+                "skill_label": dataset_info.get("task_type", "QA"),
+                "target_label": dataset_info.get("language", "ko"),
+                "subject_label": dataset_info.get("subject_type", "General"),
                 "format_label": "text",
-                "dataset_name": "benchhub_simulated",
+                "dataset_name": dataset_info.get("name", "hret_evaluation"),
                 "meta_data": json.dumps({
-                    "model_name": model_name,
+                    "model_name": model_info["name"],
                     "sample_index": i,
-                    "simulated": True
+                    "hret_evaluation": True,
+                    "reference": sample.get("reference", ""),
+                    "metadata": sample.get("metadata", {})
                 }),
-                "correctness": score
+                "correctness": sample.get("score", 0.0)
             }
             sample_results.append(sample_result)
         
         # Store results in a temporary file for later processing
-        results_file = os.path.join(self.temp_dir, f"{model_name}_samples.json")
+        results_file = os.path.join(self.temp_dir, f"{model_info['name']}_samples.json")
         with open(results_file, "w", encoding="utf-8") as f:
             json.dump(sample_results, f, indent=2)
         
         return sample_results
-    
-    def _execute_hret_command(self, plan_file: str, timeout: int) -> subprocess.CompletedProcess:
-        """Execute actual HRET command (placeholder)."""
-        
-        # TODO: Implement actual HRET command execution
-        # This would be something like:
-        # cmd = ["hret", "run", "--config", plan_file, "--output", output_file]
-        # result = subprocess.run(cmd, timeout=timeout, capture_output=True, text=True)
-        
-        # For now, return a mock successful result
-        return subprocess.CompletedProcess(
-            args=["hret", "run", "--config", plan_file],
-            returncode=0,
-            stdout="Evaluation completed successfully",
-            stderr=""
-        )
     
     def _cleanup(self) -> None:
         """Clean up temporary files."""
@@ -217,34 +318,57 @@ class HRETRunner:
             logger.warning(f"Failed to cleanup temp directory: {e}")
     
     def validate_plan(self, plan_yaml: str) -> bool:
-        """Validate HRET plan configuration."""
+        """Validate BenchhubPlus plan configuration for HRET compatibility."""
         
         try:
             plan_data = yaml.safe_load(plan_yaml)
             
             # Basic validation
-            required_keys = ["version", "metadata", "models", "datasets"]
+            required_keys = ["version", "metadata", "datasets"]
             for key in required_keys:
                 if key not in plan_data:
                     logger.error(f"Missing required key in plan: {key}")
                     return False
             
-            # Validate models
-            models = plan_data.get("models", [])
-            if not models:
-                logger.error("No models specified in plan")
+            # Validate metadata
+            metadata = plan_data.get("metadata", {})
+            if not isinstance(metadata, dict):
+                logger.error("Metadata must be a dictionary")
                 return False
-            
-            for model in models:
-                if "name" not in model or "api_base" not in model:
-                    logger.error("Model missing required fields (name, api_base)")
-                    return False
             
             # Validate datasets
             datasets = plan_data.get("datasets", [])
             if not datasets:
                 logger.error("No datasets specified in plan")
                 return False
+            
+            for dataset in datasets:
+                if not isinstance(dataset, dict):
+                    logger.error("Each dataset must be a dictionary")
+                    return False
+                
+                if "name" not in dataset:
+                    logger.error("Dataset missing required 'name' field")
+                    return False
+                
+                # Check if dataset is supported by HRET
+                dataset_name = dataset["name"]
+                supported_datasets = [
+                    "benchhub", "haerae_bench", "kmmlu", "kudge", 
+                    "click", "k2_eval", "hrm8k", "kormedqa", "kbl"
+                ]
+                
+                if dataset_name not in supported_datasets:
+                    logger.warning(f"Dataset '{dataset_name}' may not be supported by HRET")
+            
+            # Validate evaluation method if specified
+            eval_method = metadata.get("evaluation_method", "string_match")
+            supported_methods = [
+                "string_match", "log_prob", "llm_judge", "partial_match", "math_eval"
+            ]
+            
+            if eval_method not in supported_methods:
+                logger.warning(f"Evaluation method '{eval_method}' may not be supported by HRET")
             
             logger.info("Plan validation successful")
             return True

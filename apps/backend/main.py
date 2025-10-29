@@ -11,7 +11,7 @@ import uvicorn
 
 from ..core.config import get_settings
 from ..core.db import init_db
-from .routes import leaderboard, status
+from .routes import leaderboard, status, hret
 
 # Configure logging
 logging.basicConfig(
@@ -90,6 +90,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 # Include routers
 app.include_router(leaderboard.router)
 app.include_router(status.router)
+app.include_router(hret.router)
 
 
 @app.get("/")
@@ -115,6 +116,15 @@ async def api_info():
                 "browse": "GET /api/v1/leaderboard/browse",
                 "categories": "GET /api/v1/leaderboard/categories",
                 "stats": "GET /api/v1/leaderboard/stats"
+            },
+            "hret": {
+                "status": "GET /hret/status",
+                "config": "GET /hret/config",
+                "evaluate": "POST /hret/evaluate",
+                "task_status": "GET /hret/evaluate/{task_id}",
+                "validate_plan": "POST /hret/validate-plan",
+                "results": "GET /hret/results",
+                "leaderboard": "GET /hret/leaderboard"
             },
             "tasks": {
                 "status": "GET /api/v1/tasks/{task_id}",
