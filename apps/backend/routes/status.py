@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Path
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from ...core.db import get_db
 from ...core.schemas import TaskStatus, HealthResponse
@@ -22,7 +23,7 @@ async def health_check(db: Session = Depends(get_db)):
     
     try:
         # Test database connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         db_status = "connected"
     except Exception as e:
         logger.error(f"Database health check failed: {e}")

@@ -5,9 +5,10 @@ Welcome to BenchHub Plus - an interactive leaderboard system for dynamic LLM eva
 ## 📚 Documentation Index
 
 ### Getting Started
-- [Installation Guide](installation.md) - Setup and installation instructions
+- [Setup Guide](SETUP_GUIDE.md) - **Complete setup and installation instructions**
+- [Installation Guide](installation.md) - Legacy installation guide
 - [Quick Start](quickstart.md) - Get up and running in minutes
-- [Configuration](configuration.md) - Environment and system configuration
+- [Execution Log](EXECUTION_LOG.md) - Real execution process and troubleshooting
 
 ### User Guides
 - [User Manual](user-manual.md) - Complete user guide
@@ -25,7 +26,8 @@ Welcome to BenchHub Plus - an interactive leaderboard system for dynamic LLM eva
 - [Monitoring](monitoring.md) - System monitoring and maintenance
 
 ### Advanced Topics
-- [HRET Integration](hret-integration.md) - HRET toolkit integration
+- [BenchHub Configuration](BENCHHUB_CONFIG.md) - **BenchHub config structure and integration**
+- [HRET Integration](HRET_INTEGRATION.md) - **HRET toolkit integration guide**
 - [Custom Evaluations](custom-evaluations.md) - Creating custom evaluation plans
 - [Troubleshooting](troubleshooting.md) - Common issues and solutions
 
