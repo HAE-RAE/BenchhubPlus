@@ -52,6 +52,8 @@ class EvaluationOrchestrator:
         task_id = str(uuid.uuid4())
         
         try:
+            plan_metadata: Optional[Dict[str, Any]] = None
+
             # Create evaluation plan using planner agent
             if self.planner_agent:
                 plan_metadata = self.planner_agent.create_evaluation_plan(
@@ -85,19 +87,33 @@ class EvaluationOrchestrator:
             
             # Cache miss - create evaluation task
             task = self.tasks_repo.create_task(task_id, plan_details)
-            
-            # TODO: Queue task for async evaluation using Celery
-            # For now, we'll mark it as pending
-            logger.info(f"Created evaluation task {task_id} for query: {query.query}")
-            
-            # In a real implementation, this would trigger Celery task:
-            # from ..worker.tasks import run_evaluation
-            # run_evaluation.delay(task_id, plan_details)
-            
+
+            try:
+                from ...worker.tasks import run_evaluation
+
+                async_result = run_evaluation.delay(task_id, plan_details)
+                logger.info(
+                    "Dispatched evaluation task %s to worker (celery id=%s)",
+                    task_id,
+                    getattr(async_result, "id", "unknown")
+                )
+            except Exception as dispatch_error:
+                logger.error(
+                    "Failed to dispatch evaluation task %s: %s",
+                    task_id,
+                    dispatch_error
+                )
+                self.tasks_repo.update_task_status(
+                    task_id,
+                    "FAILURE",
+                    error_message=str(dispatch_error)
+                )
+                raise RuntimeError("Failed to dispatch evaluation task") from dispatch_error
+
             return TaskResponse(
                 task_id=task_id,
                 status="PENDING",
-                message="Evaluation task created and queued for processing"
+                message="Evaluation task accepted for asynchronous processing"
             )
             
         except Exception as e:

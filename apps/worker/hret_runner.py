@@ -18,6 +18,7 @@ try:
     HRET_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"HRET not available: {e}")
+    EvaluationResult = Any  # type: ignore
     HRET_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
