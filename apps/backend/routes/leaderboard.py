@@ -3,7 +3,8 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from ...core.db import get_db
@@ -36,9 +37,12 @@ async def generate_leaderboard(
     try:
         orchestrator = EvaluationOrchestrator(db)
         result = orchestrator.generate_leaderboard(query)
-        
+
         logger.info(f"Generated leaderboard task: {result.task_id}")
-        return result
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content=result.dict()
+        )
         
     except ValueError as e:
         logger.warning(f"Invalid request: {e}")
