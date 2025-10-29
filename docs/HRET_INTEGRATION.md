@@ -248,14 +248,31 @@ print(response.json())
 # 2. Start evaluation
 evaluation_request = {
     "plan_yaml": """
-version: "1.0"
+version: "2.0"
 metadata:
-  name: "GPT-3.5 Korean Evaluation"
-  evaluation_method: "string_match"
-  target_lang: "ko"
+  name: "GPT-3.5 Korean Technology Evaluation"
+  description: "Evaluate GPT-3.5 on Korean technology questions"
+  language: "Korean"
+  problem_type: "MCQA"
+  target_type: "General"
+  subject_type: ["Technology", "Tech./Computer Science"]
+  task_type: "Knowledge"
+  external_tool_usage: false
+  sample_size: 100
 datasets:
-  - name: "benchhub"
-    split: "test"
+  - name: "benchhub_filtered"
+    type: "benchhub"
+    filters:
+      problem_type: "MCQA"
+      target_type: "General"
+      subject_type: ["Technology", "Tech./Computer Science"]
+      task_type: "Knowledge"
+      external_tool_usage: false
+      language: "Korean"
+    sample_size: 100
+evaluation:
+  method: "string_match"
+  criteria: ["correctness"]
 """,
     "models": [
         {
@@ -297,6 +314,51 @@ print(result)
 
 ## Configuration
 
+### BenchHub Dataset Configuration
+
+BenchhubPlus now fully supports the BenchHub dataset structure with the following configuration fields:
+
+#### 1. Problem Type (string)
+Defines the format of the evaluation questions:
+- `Binary`: Yes/No or True/False questions
+- `MCQA`: Multiple Choice Questions with Answer options
+- `short-form`: Short answer questions
+- `open-ended`: Long-form, open-ended questions
+
+#### 2. Target Type (string)
+Specifies whether questions target specific cultural/regional knowledge:
+- `General`: Universal knowledge questions
+- `Local`: Culture or region-specific questions
+
+#### 3. Subject Type (list)
+Hierarchical subject categorization with 6 coarse-grained categories and 64 fine-grained subcategories:
+
+**Coarse Categories:**
+- `Science`: Math, Physics, Chemistry, Biology, Earth Science
+- `Technology`: Computer Science, Engineering, AI/ML, etc.
+- `Humanities and Social Science (HASS)`: History, Philosophy, Literature, etc.
+- `Arts & Sports`: Visual Arts, Music, Sports, etc.
+- `Culture`: Traditional cultures, religions, customs
+- `Social Intelligence`: Communication, ethics, leadership skills
+
+**Fine-grained Examples:**
+- `Tech./Computer Science`, `Tech./Electrical Eng.`, `Tech./AI/ML`
+- `HASS/History`, `HASS/Philosophy`, `HASS/Literature`
+- `Culture/Korean Traditional`, `Culture/East Asian`
+- `Social/Communication`, `Social/Ethics`
+
+#### 4. Task Type (string)
+Cognitive skill required to solve the problem:
+- `Knowledge`: Factual recall and information retrieval
+- `Reasoning`: Logical thinking and problem-solving
+- `Value`: Value judgment and ethical reasoning
+- `Alignment`: Cultural and social alignment assessment
+
+#### 5. External Tool Usage (boolean)
+Indicates whether external tools are required:
+- `true`: Requires calculators, search engines, or other tools
+- `false`: Can be solved with internal knowledge only
+
 ### Environment Variables
 
 ```bash
@@ -314,31 +376,67 @@ HRET_TEMP_DIR=/tmp/hret_evaluations
 
 ### HRET Plan Configuration
 
-Example YAML plan for HRET evaluation:
+Example YAML plan for BenchHub HRET evaluation:
 
 ```yaml
-version: "1.0"
+version: "2.0"
 metadata:
-  name: "Korean LLM Evaluation"
-  description: "Comprehensive Korean language evaluation"
-  evaluation_method: "string_match"
-  language_penalize: true
-  target_lang: "ko"
-  few_shot_num: 0
+  name: "BenchHub Korean LLM Evaluation"
+  description: "Comprehensive Korean language evaluation using BenchHub dataset"
+  language: "Korean"
+  problem_type: "MCQA"
+  target_type: "General"
+  subject_type: ["Technology", "Tech./Computer Science"]
+  task_type: "Knowledge"
+  external_tool_usage: false
   sample_size: 100
+  seed: 42
 
 datasets:
-  - name: "benchhub"
-    split: "test"
-    params:
-      language: "ko"
-      problem_types: ["multiple_choice"]
-      task_types: ["qa"]
-      
-  - name: "kmmlu"
-    split: "test"
-    params:
-      subjects: ["korean_history", "korean_language"]
+  - name: "benchhub_filtered"
+    type: "benchhub"
+    filters:
+      problem_type: "MCQA"
+      target_type: "General"
+      subject_type: ["Technology", "Tech./Computer Science"]
+      task_type: "Knowledge"
+      external_tool_usage: false
+      language: "Korean"
+    sample_size: 100
+    seed: 42
+
+evaluation:
+  method: "string_match"
+  criteria: ["correctness"]
+
+output:
+  format: "json"
+  include_samples: true
+  include_metadata: true
+```
+
+#### Advanced Filtering Examples
+
+**Multi-subject evaluation:**
+```yaml
+subject_type: ["Science", "Math/Algebra", "Physics/Classical Mechanics"]
+```
+
+**Reasoning-focused evaluation:**
+```yaml
+problem_type: "open-ended"
+task_type: "Reasoning"
+evaluation:
+  method: "llm_judge"
+  judge_model: "gpt-4"
+  criteria: ["correctness", "reasoning_quality", "clarity"]
+```
+
+**Cultural knowledge assessment:**
+```yaml
+target_type: "Local"
+subject_type: ["Culture", "Culture/Korean Traditional"]
+task_type: "Knowledge"
 ```
 
 ## Data Flow

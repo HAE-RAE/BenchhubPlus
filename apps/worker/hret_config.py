@@ -48,28 +48,48 @@ class HRETConfigManager:
         # Use first dataset for configuration
         dataset_config = datasets[0] if datasets else {"name": "benchhub", "split": "test"}
         
+        # Extract BenchHub specific filters
+        filters = dataset_config.get("filters", {})
+        
         # Create HRET evaluator configuration
         hret_config = {
             "dataset": {
                 "name": dataset_config.get("name", "benchhub"),
                 "split": dataset_config.get("split", "test"),
-                "params": dataset_config.get("params", {})
+                "params": {
+                    # BenchHub specific filtering parameters
+                    "problem_type": filters.get("problem_type"),
+                    "target_type": filters.get("target_type"),
+                    "subject_type": filters.get("subject_type"),
+                    "task_type": filters.get("task_type"),
+                    "external_tool_usage": filters.get("external_tool_usage"),
+                    "language": filters.get("language", metadata.get("language", "ko")),
+                    **dataset_config.get("params", {})
+                }
             },
             "model": {
                 "name": self._get_hret_model_backend(model_info),
                 "params": self._get_model_params(model_info)
             },
             "evaluation": {
-                "method": metadata.get("evaluation_method", "string_match"),
+                "method": self._get_evaluation_method(metadata, filters),
                 "params": {}
             },
             "language_penalize": metadata.get("language_penalize", True),
-            "target_lang": metadata.get("target_lang", "ko"),
+            "target_lang": filters.get("language", metadata.get("language", "ko")),
             "few_shot": {
                 "num": metadata.get("few_shot_num", 0),
                 "split": metadata.get("few_shot_split"),
                 "instruction": metadata.get("few_shot_instruction", "Use the following examples to answer the question."),
                 "example_template": metadata.get("few_shot_template", "Q: {input}\nA: {reference}")
+            },
+            # BenchHub specific metadata
+            "benchhub_config": {
+                "problem_type": filters.get("problem_type"),
+                "target_type": filters.get("target_type"),
+                "subject_type": filters.get("subject_type"),
+                "task_type": filters.get("task_type"),
+                "external_tool_usage": filters.get("external_tool_usage")
             }
         }
         
@@ -213,6 +233,29 @@ class HRETConfigManager:
         
         return params
     
+    def _get_evaluation_method(self, metadata: Dict[str, Any], filters: Dict[str, Any]) -> str:
+        """Determine appropriate evaluation method based on BenchHub config."""
+        
+        # Check if explicitly specified
+        if "evaluation_method" in metadata:
+            return metadata["evaluation_method"]
+        
+        # Determine based on problem type
+        problem_type = filters.get("problem_type", "MCQA")
+        task_type = filters.get("task_type", "Knowledge")
+        
+        if problem_type == "MCQA":
+            return "string_match"
+        elif problem_type == "Binary":
+            return "string_match"
+        elif problem_type in ["short-form", "open-ended"]:
+            if task_type in ["Reasoning", "Value", "Alignment"]:
+                return "llm_judge"
+            else:
+                return "partial_match"
+        else:
+            return "string_match"  # Default fallback
+    
     def get_supported_datasets(self) -> List[str]:
         """Get list of datasets supported by HRET."""
         
@@ -253,27 +296,44 @@ class HRETConfigManager:
         """Create an example BenchhubPlus plan file compatible with HRET."""
         
         example_plan = {
-            "version": "1.0",
+            "version": "2.0",
             "metadata": {
-                "name": "HRET Integration Example",
-                "description": "Example evaluation plan for HRET integration",
-                "evaluation_method": "string_match",
-                "language_penalize": True,
-                "target_lang": "ko",
-                "few_shot_num": 0,
-                "sample_size": 100
+                "name": "BenchHub HRET Integration Example",
+                "description": "Example evaluation plan for BenchHub HRET integration",
+                "language": "Korean",
+                "problem_type": "MCQA",
+                "target_type": "General",
+                "subject_type": ["Technology", "Tech./Computer Science"],
+                "task_type": "Knowledge",
+                "external_tool_usage": False,
+                "sample_size": 100,
+                "seed": 42
             },
             "datasets": [
                 {
-                    "name": "benchhub",
-                    "split": "test",
-                    "params": {
-                        "language": "ko",
-                        "problem_types": ["multiple_choice"],
-                        "task_types": ["qa"]
-                    }
+                    "name": "benchhub_filtered",
+                    "type": "benchhub",
+                    "filters": {
+                        "problem_type": "MCQA",
+                        "target_type": "General",
+                        "subject_type": ["Technology", "Tech./Computer Science"],
+                        "task_type": "Knowledge",
+                        "external_tool_usage": False,
+                        "language": "Korean"
+                    },
+                    "sample_size": 100,
+                    "seed": 42
                 }
-            ]
+            ],
+            "evaluation": {
+                "method": "string_match",
+                "criteria": ["correctness"]
+            },
+            "output": {
+                "format": "json",
+                "include_samples": True,
+                "include_metadata": True
+            }
         }
         
         if not output_path:

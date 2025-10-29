@@ -6,6 +6,54 @@ from typing import Any, Dict, List, Optional, Union
 from pydantic import BaseModel, Field, validator
 
 
+# BenchHub Categories Configuration
+BENCHHUB_COARSE_CATEGORIES = [
+    "Science",
+    "Technology", 
+    "Humanities and Social Science (HASS)",
+    "Arts & Sports",
+    "Culture",
+    "Social Intelligence"
+]
+
+BENCHHUB_FINE_CATEGORIES = {
+    "Science": [
+        "Math/Algebra", "Math/Geometry", "Math/Statistics", "Math/Calculus",
+        "Physics/Classical Mechanics", "Physics/Thermodynamics", "Physics/Electromagnetism",
+        "Chemistry/General", "Chemistry/Organic", "Chemistry/Inorganic",
+        "Biology/General", "Biology/Genetics", "Biology/Ecology",
+        "Earth Science/Geology", "Earth Science/Meteorology"
+    ],
+    "Technology": [
+        "Tech./Computer Science", "Tech./Electrical Eng.", "Tech./Mechanical Eng.",
+        "Tech./Civil Eng.", "Tech./Chemical Eng.", "Tech./Materials Science",
+        "Tech./Information Systems", "Tech./Robotics", "Tech./AI/ML",
+        "Tech./Cybersecurity", "Tech./Data Science"
+    ],
+    "Humanities and Social Science (HASS)": [
+        "HASS/History", "HASS/Philosophy", "HASS/Literature", "HASS/Linguistics",
+        "HASS/Psychology", "HASS/Sociology", "HASS/Anthropology", "HASS/Political Science",
+        "HASS/Economics", "HASS/Geography", "HASS/Education", "HASS/Law",
+        "HASS/International Relations", "HASS/Public Administration"
+    ],
+    "Arts & Sports": [
+        "Arts/Visual Arts", "Arts/Music", "Arts/Theater", "Arts/Film",
+        "Arts/Design", "Arts/Architecture", "Sports/General", "Sports/Team Sports",
+        "Sports/Individual Sports", "Sports/Olympic Sports"
+    ],
+    "Culture": [
+        "Culture/Korean Traditional", "Culture/East Asian", "Culture/Western",
+        "Culture/World Cultures", "Culture/Religion", "Culture/Mythology",
+        "Culture/Festivals", "Culture/Food", "Culture/Fashion"
+    ],
+    "Social Intelligence": [
+        "Social/Communication", "Social/Ethics", "Social/Etiquette", "Social/Leadership",
+        "Social/Teamwork", "Social/Conflict Resolution", "Social/Emotional Intelligence",
+        "Social/Cultural Sensitivity", "Social/Professional Skills"
+    ]
+}
+
+
 class ModelInfo(BaseModel):
     """Model information for evaluation."""
     
@@ -123,20 +171,72 @@ class ExperimentSampleResponse(BaseModel):
 
 
 class PlanConfig(BaseModel):
-    """Configuration for evaluation plan."""
+    """Configuration for evaluation plan based on BenchHub config structure."""
     
-    language: str = Field(..., description="Target language (e.g., Korean, English)")
-    subject_type: str = Field(..., description="Subject type (e.g., Technology, Science)")
-    task_type: str = Field(..., description="Task type (e.g., Programming, Math)")
+    # BenchHub specific fields
+    problem_type: str = Field(..., description="Problem format: Binary/MCQA/short-form/open-ended")
+    target_type: str = Field(..., description="Target type: General/Local")
+    subject_type: List[str] = Field(..., description="Subject categories (coarse and fine-grained)")
+    task_type: str = Field(..., description="Task type: Knowledge/Reasoning/Value/Alignment")
+    external_tool_usage: bool = Field(default=False, description="Whether external tools are required")
+    
+    # Additional configuration
+    language: str = Field(default="Korean", description="Target language (e.g., Korean, English)")
     sample_size: int = Field(default=100, ge=1, le=1000, description="Number of samples")
     seed: int = Field(default=42, description="Random seed for reproducibility")
     
+    @validator("problem_type")
+    def validate_problem_type(cls, v: str) -> str:
+        """Validate problem type."""
+        valid_types = ["Binary", "MCQA", "short-form", "open-ended"]
+        if v not in valid_types:
+            raise ValueError(f"problem_type must be one of {valid_types}")
+        return v
+    
+    @validator("target_type")
+    def validate_target_type(cls, v: str) -> str:
+        """Validate target type."""
+        valid_types = ["General", "Local"]
+        if v not in valid_types:
+            raise ValueError(f"target_type must be one of {valid_types}")
+        return v
+    
+    @validator("subject_type")
+    def validate_subject_type(cls, v: List[str]) -> List[str]:
+        """Validate subject type categories."""
+        if not v:
+            raise ValueError("subject_type cannot be empty")
+        
+        # Get all valid categories (coarse + fine-grained)
+        all_fine_categories = []
+        for fine_list in BENCHHUB_FINE_CATEGORIES.values():
+            all_fine_categories.extend(fine_list)
+        
+        valid_categories = BENCHHUB_COARSE_CATEGORIES + all_fine_categories
+        
+        for category in v:
+            if category not in valid_categories:
+                raise ValueError(f"Invalid subject_type '{category}'. Must be one of the BenchHub categories.")
+        
+        return v
+    
+    @validator("task_type")
+    def validate_task_type(cls, v: str) -> str:
+        """Validate task type."""
+        valid_types = ["Knowledge", "Reasoning", "Value", "Alignment"]
+        if v not in valid_types:
+            raise ValueError(f"task_type must be one of {valid_types}")
+        return v
+    
     class Config:
-        schema_extra = {
+        json_schema_extra = {
             "example": {
+                "problem_type": "MCQA",
+                "target_type": "General",
+                "subject_type": ["Science", "Tech./Electrical Eng."],
+                "task_type": "Knowledge",
+                "external_tool_usage": False,
                 "language": "Korean",
-                "subject_type": "Technology",
-                "task_type": "Programming",
                 "sample_size": 100,
                 "seed": 42
             }

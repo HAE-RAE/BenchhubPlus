@@ -86,10 +86,23 @@ cp .env.example .env
 
 ### 1. Natural Language Query
 ```
-"Compare GPT-4 and Claude-3 on Korean high school math problems"
+"Compare GPT-4 and Claude-3 on Korean technology multiple choice questions"
 ```
 
-### 2. Model Configuration
+### 2. Generated BenchHub Configuration
+```json
+{
+  "problem_type": "MCQA",
+  "target_type": "General",
+  "subject_type": ["Technology", "Tech./Computer Science"],
+  "task_type": "Knowledge",
+  "external_tool_usage": false,
+  "language": "Korean",
+  "sample_size": 100
+}
+```
+
+### 3. Model Configuration
 ```json
 {
   "models": [
@@ -109,11 +122,11 @@ cp .env.example .env
 }
 ```
 
-### 3. Results
+### 4. Results
 - Interactive leaderboard with rankings
-- Detailed performance metrics
+- Detailed performance metrics by BenchHub categories
 - Statistical significance analysis
-- Exportable results
+- Exportable results with BenchHub metadata
 
 ## 🏗️ Architecture
 
@@ -150,6 +163,8 @@ cp .env.example .env
 
 ### Reference
 - [📡 API Reference](docs/api-reference.md) - REST API documentation
+- [🔧 BenchHub Configuration](docs/BENCHHUB_CONFIG.md) - BenchHub dataset configuration guide
+- [🔗 HRET Integration](docs/HRET_INTEGRATION.md) - HRET toolkit integration guide
 - [🚨 Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
 
 ## 🛠️ Technology Stack

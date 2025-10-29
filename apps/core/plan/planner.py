@@ -31,26 +31,37 @@ class PlannerAgent:
     def parse_query(self, query: str) -> PlanConfig:
         """Parse natural language query into structured plan configuration."""
         
-        system_prompt = """You are an expert evaluation planner for language models. 
-Your task is to convert natural language queries into structured evaluation plans.
+        system_prompt = """You are an expert evaluation planner for language models using BenchHub dataset structure.
+Your task is to convert natural language queries into structured evaluation plans following BenchHub configuration.
 
 Given a user query, extract the following information:
-1. language: Target language (Korean, English, Chinese, etc.)
-2. subject_type: Subject area (Technology, Science, Math, Literature, etc.)
-3. task_type: Task type (Programming, QA, Translation, Reasoning, etc.)
-4. sample_size: Number of samples to evaluate (default: 100, max: 1000)
+1. problem_type: Problem format - one of ["Binary", "MCQA", "short-form", "open-ended"]
+2. target_type: Target scope - one of ["General", "Local"] 
+3. subject_type: Subject categories - list from BenchHub categories (can include both coarse and fine-grained)
+4. task_type: Task type - one of ["Knowledge", "Reasoning", "Value", "Alignment"]
+5. external_tool_usage: Whether external tools are needed - boolean
+6. language: Target language (Korean, English, etc.)
+7. sample_size: Number of samples to evaluate (default: 100, max: 1000)
+
+BenchHub Categories:
+- Science: Math/Algebra, Math/Geometry, Physics/Classical Mechanics, Chemistry/General, Biology/General, etc.
+- Technology: Tech./Computer Science, Tech./Electrical Eng., Tech./AI/ML, etc.
+- Humanities and Social Science (HASS): HASS/History, HASS/Philosophy, HASS/Literature, etc.
+- Arts & Sports: Arts/Visual Arts, Arts/Music, Sports/General, etc.
+- Culture: Culture/Korean Traditional, Culture/East Asian, Culture/Western, etc.
+- Social Intelligence: Social/Communication, Social/Ethics, Social/Leadership, etc.
 
 Return your response as a JSON object with these exact keys.
 
 Examples:
 Query: "한국어로 된 프로그래밍 문제를 잘 푸는 모델을 찾고 싶어"
-Response: {"language": "Korean", "subject_type": "Technology", "task_type": "Programming", "sample_size": 100}
+Response: {"problem_type": "MCQA", "target_type": "General", "subject_type": ["Technology", "Tech./Computer Science"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 100}
 
 Query: "Which model is best at English math problems?"
-Response: {"language": "English", "subject_type": "Math", "task_type": "Problem_Solving", "sample_size": 100}
+Response: {"problem_type": "MCQA", "target_type": "General", "subject_type": ["Science", "Math/Algebra"], "task_type": "Reasoning", "external_tool_usage": false, "language": "English", "sample_size": 100}
 
-Query: "I need to evaluate models on Chinese literature comprehension with 200 samples"
-Response: {"language": "Chinese", "subject_type": "Literature", "task_type": "Comprehension", "sample_size": 200}
+Query: "I need to evaluate models on Korean traditional culture knowledge with 200 samples"
+Response: {"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Culture", "Culture/Korean Traditional"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 200}
 """
         
         user_prompt = f"Query: {query}\nResponse:"
@@ -87,9 +98,12 @@ Response: {"language": "Chinese", "subject_type": "Literature", "task_type": "Co
             logger.error(f"Failed to parse query '{query}': {e}")
             # Return default configuration
             return PlanConfig(
-                language="English",
-                subject_type="General",
-                task_type="QA",
+                problem_type="MCQA",
+                target_type="General", 
+                subject_type=["Science"],
+                task_type="Knowledge",
+                external_tool_usage=False,
+                language="Korean",
                 sample_size=100
             )
     
@@ -108,11 +122,14 @@ Response: {"language": "Chinese", "subject_type": "Literature", "task_type": "Co
             "version": "2.0",
             "metadata": {
                 "name": f"BenchHub Plus Evaluation - {plan_config.task_type}",
-                "description": f"Evaluation plan for {plan_config.language} {plan_config.subject_type} {plan_config.task_type}",
+                "description": f"Evaluation plan for {plan_config.language} {'/'.join(plan_config.subject_type)} {plan_config.task_type}",
                 "created_by": "BenchHub Plus Planner Agent",
                 "language": plan_config.language,
+                "problem_type": plan_config.problem_type,
+                "target_type": plan_config.target_type,
                 "subject_type": plan_config.subject_type,
                 "task_type": plan_config.task_type,
+                "external_tool_usage": plan_config.external_tool_usage,
                 "sample_size": plan_config.sample_size,
                 "seed": plan_config.seed
             },
@@ -122,22 +139,25 @@ Response: {"language": "Chinese", "subject_type": "Literature", "task_type": "Co
                     "name": "benchhub_filtered",
                     "type": "benchhub",
                     "filters": {
-                        "target_label": plan_config.language,
-                        "subject_label": plan_config.subject_type,
-                        "skill_label": plan_config.task_type
+                        "problem_type": plan_config.problem_type,
+                        "target_type": plan_config.target_type,
+                        "subject_type": plan_config.subject_type,
+                        "task_type": plan_config.task_type,
+                        "external_tool_usage": plan_config.external_tool_usage,
+                        "language": plan_config.language
                     },
                     "sample_size": plan_config.sample_size,
                     "seed": plan_config.seed
                 }
             ],
             "evaluation": {
-                "method": "llm_judge",  # TODO: Make this configurable
-                "judge_model": "gpt-4",
+                "method": "string_match" if plan_config.problem_type == "MCQA" else "llm_judge",
+                "judge_model": "gpt-4" if plan_config.problem_type != "MCQA" else None,
                 "criteria": [
                     "correctness",
                     "completeness",
                     "clarity"
-                ]
+                ] if plan_config.problem_type != "MCQA" else ["correctness"]
             },
             "output": {
                 "format": "json",
@@ -274,7 +294,9 @@ if __name__ == "__main__":
         test_queries = [
             "한국어로 된 프로그래밍 문제를 잘 푸는 모델을 찾고 싶어",
             "Which model is best at English math problems?",
-            "I need to evaluate models on Chinese literature comprehension"
+            "I need to evaluate models on Korean traditional culture knowledge",
+            "전기공학 관련 객관식 문제로 모델을 평가하고 싶어요",
+            "Find the best model for reasoning tasks in social intelligence"
         ]
         
         for query in test_queries:
