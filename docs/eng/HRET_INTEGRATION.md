@@ -255,7 +255,7 @@ metadata:
   language: "Korean"
   problem_type: "MCQA"
   target_type: "General"
-  subject_type: ["Technology", "Tech./Computer Science"]
+  subject_type: ["Tech.", "Tech./Coding"]
   task_type: "Knowledge"
   external_tool_usage: false
   sample_size: 100
@@ -265,7 +265,7 @@ datasets:
     filters:
       problem_type: "MCQA"
       target_type: "General"
-      subject_type: ["Technology", "Tech./Computer Science"]
+      subject_type: ["Tech.", "Tech./Coding"]
       task_type: "Knowledge"
       external_tool_usage: false
       language: "Korean"
@@ -331,21 +331,21 @@ Specifies whether questions target specific cultural/regional knowledge:
 - `Local`: Culture or region-specific questions
 
 #### 3. Subject Type (list)
-Hierarchical subject categorization with 6 coarse-grained categories and 64 fine-grained subcategories:
+Hierarchical subject categorization with 6 coarse-grained categories and 250 fine-grained subcategories:
 
 **Coarse Categories:**
-- `Science`: Math, Physics, Chemistry, Biology, Earth Science
-- `Technology`: Computer Science, Engineering, AI/ML, etc.
-- `Humanities and Social Science (HASS)`: History, Philosophy, Literature, etc.
-- `Arts & Sports`: Visual Arts, Music, Sports, etc.
-- `Culture`: Traditional cultures, religions, customs
-- `Social Intelligence`: Communication, ethics, leadership skills
+- `Art & Sports`: Creative fields such as `Art & Sports/Music`, `Art & Sports/arts&sports/design`
+- `Culture`: Societal context like `Culture/Tradition`, `Culture/culture/hobbies`
+- `HASS`: Humanities and social sciences including `HASS/History`, `HASS/social&humanity/finance`
+- `Science`: STEM domains such as `Science/Math`, `Science/science/dna`
+- `Social Intelligence`: Social reasoning like `Social Intelligence/Commonsense`, `Social Intelligence/misc/idiomatic_expression`
+- `Tech.`: Engineering and computing including `Tech./Coding`, `Tech./tech/robotics`
 
 **Fine-grained Examples:**
-- `Tech./Computer Science`, `Tech./Electrical Eng.`, `Tech./AI/ML`
-- `HASS/History`, `HASS/Philosophy`, `HASS/Literature`
-- `Culture/Korean Traditional`, `Culture/East Asian`
-- `Social/Communication`, `Social/Ethics`
+- `Tech./Coding`, `Tech./Electrical Eng.`, `Tech./tech/cloud`
+- `HASS/Philosophy`, `HASS/social&humanity/management`
+- `Culture/Celebration Holiday`, `Culture/culture/attractions`
+- `Social Intelligence/Bias`, `Social Intelligence/misc/proverb`
 
 #### 4. Task Type (string)
 Cognitive skill required to solve the problem:
@@ -386,7 +386,7 @@ metadata:
   language: "Korean"
   problem_type: "MCQA"
   target_type: "General"
-  subject_type: ["Technology", "Tech./Computer Science"]
+  subject_type: ["Tech.", "Tech./Coding"]
   task_type: "Knowledge"
   external_tool_usage: false
   sample_size: 100
@@ -398,7 +398,7 @@ datasets:
     filters:
       problem_type: "MCQA"
       target_type: "General"
-      subject_type: ["Technology", "Tech./Computer Science"]
+      subject_type: ["Tech.", "Tech./Coding"]
       task_type: "Knowledge"
       external_tool_usage: false
       language: "Korean"
@@ -419,7 +419,7 @@ output:
 
 **Multi-subject evaluation:**
 ```yaml
-subject_type: ["Science", "Math/Algebra", "Physics/Classical Mechanics"]
+subject_type: ["Science", "Science/Math", "Science/Physics"]
 ```
 
 **Reasoning-focused evaluation:**
@@ -435,7 +435,7 @@ evaluation:
 **Cultural knowledge assessment:**
 ```yaml
 target_type: "Local"
-subject_type: ["Culture", "Culture/Korean Traditional"]
+subject_type: ["Culture", "Culture/Tradition"]
 task_type: "Knowledge"
 ```
 

@@ -44,24 +44,24 @@ Given a user query, extract the following information:
 7. sample_size: Number of samples to evaluate (default: 100, max: 1000)
 
 BenchHub Categories:
-- Science: Math/Algebra, Math/Geometry, Physics/Classical Mechanics, Chemistry/General, Biology/General, etc.
-- Technology: Tech./Computer Science, Tech./Electrical Eng., Tech./AI/ML, etc.
-- Humanities and Social Science (HASS): HASS/History, HASS/Philosophy, HASS/Literature, etc.
-- Arts & Sports: Arts/Visual Arts, Arts/Music, Sports/General, etc.
-- Culture: Culture/Korean Traditional, Culture/East Asian, Culture/Western, etc.
-- Social Intelligence: Social/Communication, Social/Ethics, Social/Leadership, etc.
+- Art & Sports: Art & Sports/Music, Art & Sports/arts&sports/design, Art & Sports/Urban Eng., etc.
+- Culture: Culture/Tradition, Culture/Food, Culture/culture/hobbies, etc.
+- HASS: HASS/History, HASS/Philosophy, HASS/social&humanity/finance, etc.
+- Science: Science/Math, Science/Biology, Science/science/dna, etc.
+- Social Intelligence: Social Intelligence/Commonsense, Social Intelligence/misc/idiomatic_expression, etc.
+- Tech.: Tech./Coding, Tech./Aerospace Eng., Tech./tech/robotics, etc.
 
 Return your response as a JSON object with these exact keys.
 
 Examples:
 Query: "한국어로 된 프로그래밍 문제를 잘 푸는 모델을 찾고 싶어"
-Response: {"problem_type": "MCQA", "target_type": "General", "subject_type": ["Technology", "Tech./Computer Science"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 100}
+Response: {"problem_type": "MCQA", "target_type": "General", "subject_type": ["Tech.", "Tech./Coding"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 100}
 
 Query: "Which model is best at English math problems?"
-Response: {"problem_type": "MCQA", "target_type": "General", "subject_type": ["Science", "Math/Algebra"], "task_type": "Reasoning", "external_tool_usage": false, "language": "English", "sample_size": 100}
+Response: {"problem_type": "MCQA", "target_type": "General", "subject_type": ["Science", "Science/Math"], "task_type": "Reasoning", "external_tool_usage": false, "language": "English", "sample_size": 100}
 
 Query: "I need to evaluate models on Korean traditional culture knowledge with 200 samples"
-Response: {"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Culture", "Culture/Korean Traditional"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 200}
+Response: {"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Culture", "Culture/Tradition"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 200}
 """
         
         user_prompt = f"Query: {query}\nResponse:"

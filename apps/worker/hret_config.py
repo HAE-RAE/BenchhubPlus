@@ -303,7 +303,7 @@ class HRETConfigManager:
                 "language": "Korean",
                 "problem_type": "MCQA",
                 "target_type": "General",
-                "subject_type": ["Technology", "Tech./Computer Science"],
+                "subject_type": ["Tech.", "Tech./Coding"],
                 "task_type": "Knowledge",
                 "external_tool_usage": False,
                 "sample_size": 100,
@@ -316,7 +316,7 @@ class HRETConfigManager:
                     "filters": {
                         "problem_type": "MCQA",
                         "target_type": "General",
-                        "subject_type": ["Technology", "Tech./Computer Science"],
+                        "subject_type": ["Tech.", "Tech./Coding"],
                         "task_type": "Knowledge",
                         "external_tool_usage": False,
                         "language": "Korean"
