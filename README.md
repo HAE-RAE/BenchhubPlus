@@ -7,6 +7,8 @@
 
 An interactive leaderboard system for dynamic LLM evaluation that converts natural language queries to customized model rankings using FastAPI backend, Streamlit frontend, Celery workers, and HRET integration.
 
+<img width="1919" height="962" alt="benchhubplus" src="https://github.com/user-attachments/assets/0628747f-0939-4090-b5f3-ebb43c8c25a7" />
+
 ## 🌟 Features
 
 ### 🤖 AI-Powered Evaluation Planning
