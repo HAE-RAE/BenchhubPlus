@@ -40,103 +40,285 @@
 
 ### 3. Subject Type (주제 분류, list)
 
-6개의 대분류와 64개의 세부 분류로 이루어진 계층적 주제 분류 체계를 사용합니다.
+6개의 대분류와 250개의 세부 분류로 이루어진 계층적 주제 분류 체계를 사용합니다.
 
 #### 대분류 (6)
 
-1. **Science**
-2. **Technology**
-3. **Humanities and Social Science (HASS)**
-4. **Arts & Sports**
-5. **Culture**
-6. **Social Intelligence**
+1. **Art & Sports**
+2. **Culture**
+3. **HASS**
+4. **Science**
+5. **Social Intelligence**
+6. **Tech.**
 
-#### 세부 분류 (64)
+#### 세부 분류 (250)
 
-**Science (15개):**
-- `Math/Algebra`
-- `Math/Geometry`
-- `Math/Statistics`
-- `Math/Calculus`
-- `Physics/Classical Mechanics`
-- `Physics/Thermodynamics`
-- `Physics/Electromagnetism`
-- `Chemistry/General`
-- `Chemistry/Organic`
-- `Chemistry/Inorganic`
-- `Biology/General`
-- `Biology/Genetics`
-- `Biology/Ecology`
-- `Earth Science/Geology`
-- `Earth Science/Meteorology`
+**Art & Sports (68개):**
+- `Art & Sports/Architecture`
+- `Art & Sports/Clothing`
+- `Art & Sports/Education`
+- `Art & Sports/Fashion`
+- `Art & Sports/Festivals`
+- `Art & Sports/Food`
+- `Art & Sports/Language`
+- `Art & Sports/Literature`
+- `Art & Sports/Media`
+- `Art & Sports/Music`
+- `Art & Sports/Painting`
+- `Art & Sports/Performing`
+- `Art & Sports/Photography`
+- `Art & Sports/Sculpture`
+- `Art & Sports/Sports`
+- `Art & Sports/Urban Eng.`
+- `Art & Sports/arts&sports/animal`
+- `Art & Sports/arts&sports/animal_life`
+- `Art & Sports/arts&sports/animals`
+- `Art & Sports/arts&sports/animation`
+- `Art & Sports/arts&sports/anime`
+- `Art & Sports/arts&sports/art`
+- `Art & Sports/arts&sports/arts`
+- `Art & Sports/arts&sports/artwork`
+- `Art & Sports/arts&sports/barking`
+- `Art & Sports/arts&sports/boat`
+- `Art & Sports/arts&sports/branding`
+- `Art & Sports/arts&sports/character`
+- `Art & Sports/arts&sports/collecting`
+- `Art & Sports/arts&sports/dance`
+- `Art & Sports/arts&sports/design`
+- `Art & Sports/arts&sports/digital_design`
+- `Art & Sports/arts&sports/dog`
+- `Art & Sports/arts&sports/dogs`
+- `Art & Sports/arts&sports/drink`
+- `Art & Sports/arts&sports/equestrian`
+- `Art & Sports/arts&sports/fantasy`
+- `Art & Sports/arts&sports/farming`
+- `Art & Sports/arts&sports/fiction`
+- `Art & Sports/arts&sports/fitness`
+- `Art & Sports/arts&sports/flower`
+- `Art & Sports/arts&sports/furniture`
+- `Art & Sports/arts&sports/game`
+- `Art & Sports/arts&sports/gaming`
+- `Art & Sports/arts&sports/graphics`
+- `Art & Sports/arts&sports/illustration`
+- `Art & Sports/arts&sports/infographic`
+- `Art & Sports/arts&sports/landscape`
+- `Art & Sports/arts&sports/landscapes`
+- `Art & Sports/arts&sports/nature`
+- `Art & Sports/arts&sports/poetry`
+- `Art & Sports/arts&sports/puzzle`
+- `Art & Sports/arts&sports/reading`
+- `Art & Sports/arts&sports/scenic`
+- `Art & Sports/arts&sports/speech`
+- `Art & Sports/arts&sports/toy`
+- `Art & Sports/arts&sports/transportation`
+- `Art & Sports/arts&sports/typography`
+- `Art & Sports/arts&sports/urban`
+- `Art & Sports/arts&sports/urban_art`
+- `Art & Sports/arts&sports/urban_design`
+- `Art & Sports/arts&sports/urban_environment`
+- `Art & Sports/arts&sports/urban_life`
+- `Art & Sports/arts&sports/urbanism`
+- `Art & Sports/arts&sports/video_games`
+- `Art & Sports/arts&sports/website`
+- `Art & Sports/arts&sports/wine`
+- `Art & Sports/arts&sports/zoology`
 
-**Technology (11개):**
-- `Tech./Computer Science`
-- `Tech./Electrical Eng.`
-- `Tech./Mechanical Eng.`
-- `Tech./Civil Eng.`
-- `Tech./Chemical Eng.`
-- `Tech./Materials Science`
-- `Tech./Information Systems`
-- `Tech./Robotics`
-- `Tech./AI/ML`
-- `Tech./Cybersecurity`
-- `Tech./Data Science`
-
-**Humanities and Social Science (14개):**
-- `HASS/History`
-- `HASS/Philosophy`
-- `HASS/Literature`
-- `HASS/Linguistics`
-- `HASS/Psychology`
-- `HASS/Sociology`
-- `HASS/Anthropology`
-- `HASS/Political Science`
-- `HASS/Economics`
-- `HASS/Geography`
-- `HASS/Education`
-- `HASS/Law`
-- `HASS/International Relations`
-- `HASS/Public Administration`
-
-**Arts & Sports (10개):**
-- `Arts/Visual Arts`
-- `Arts/Music`
-- `Arts/Theater`
-- `Arts/Film`
-- `Arts/Design`
-- `Arts/Architecture`
-- `Sports/General`
-- `Sports/Team Sports`
-- `Sports/Individual Sports`
-- `Sports/Olympic Sports`
-
-**Culture (9개):**
-- `Culture/Korean Traditional`
-- `Culture/East Asian`
-- `Culture/Western`
-- `Culture/World Cultures`
-- `Culture/Religion`
-- `Culture/Mythology`
-- `Culture/Festivals`
+**Culture (14개):**
+- `Culture/Celebration Holiday`
+- `Culture/Clothing`
+- `Culture/Daily Life`
+- `Culture/Family`
 - `Culture/Food`
-- `Culture/Fashion`
+- `Culture/Holiday`
+- `Culture/Housing`
+- `Culture/Leisure`
+- `Culture/Tradition`
+- `Culture/Work Life`
+- `Culture/culture/attractions`
+- `Culture/culture/friendship`
+- `Culture/culture/hobbies`
+- `Culture/culture/nature`
 
-**Social Intelligence (9개):**
-- `Social/Communication`
-- `Social/Ethics`
-- `Social/Etiquette`
-- `Social/Leadership`
-- `Social/Teamwork`
-- `Social/Conflict Resolution`
-- `Social/Emotional Intelligence`
-- `Social/Cultural Sensitivity`
-- `Social/Professional Skills`
+**HASS (68개):**
+- `HASS/Administration`
+- `HASS/Art & Sports`
+- `HASS/Biology`
+- `HASS/Celebration Holiday`
+- `HASS/Cognitive Studies`
+- `HASS/Culture`
+- `HASS/Daily Life`
+- `HASS/Economics`
+- `HASS/Education`
+- `HASS/Family`
+- `HASS/Food`
+- `HASS/Geography`
+- `HASS/HASS`
+- `HASS/History`
+- `HASS/Language`
+- `HASS/Law`
+- `HASS/Literature`
+- `HASS/Math`
+- `HASS/Media`
+- `HASS/Music`
+- `HASS/Philosophy`
+- `HASS/Physics`
+- `HASS/Politics`
+- `HASS/Psychology`
+- `HASS/Religion`
+- `HASS/Sports`
+- `HASS/Tech.`
+- `HASS/Trade`
+- `HASS/Tradition`
+- `HASS/Urban Eng.`
+- `HASS/Welfare`
+- `HASS/Work Life`
+- `HASS/social&humanity/animal_welfare`
+- `HASS/social&humanity/biography`
+- `HASS/social&humanity/branding`
+- `HASS/social&humanity/celebrity`
+- `HASS/social&humanity/communication`
+- `HASS/social&humanity/crime`
+- `HASS/social&humanity/customer_support`
+- `HASS/social&humanity/data_science`
+- `HASS/social&humanity/database`
+- `HASS/social&humanity/databases`
+- `HASS/social&humanity/date`
+- `HASS/social&humanity/dates`
+- `HASS/social&humanity/datetime`
+- `HASS/social&humanity/director`
+- `HASS/social&humanity/drama`
+- `HASS/social&humanity/environment`
+- `HASS/social&humanity/fiction`
+- `HASS/social&humanity/finance`
+- `HASS/social&humanity/friendship`
+- `HASS/social&humanity/health`
+- `HASS/social&humanity/hero`
+- `HASS/social&humanity/identity`
+- `HASS/social&humanity/leadership`
+- `HASS/social&humanity/library`
+- `HASS/social&humanity/lifestyle`
+- `HASS/social&humanity/management`
+- `HASS/social&humanity/museum`
+- `HASS/social&humanity/organizations`
+- `HASS/social&humanity/privacy`
+- `HASS/social&humanity/real_estate`
+- `HASS/social&humanity/sociology`
+- `HASS/social&humanity/technology`
+- `HASS/social&humanity/transport`
+- `HASS/social&humanity/transportation`
+- `HASS/social&humanity/website`
+- `HASS/social&humanity/workplace`
+
+**Science (20개):**
+- `Science/Astronomy`
+- `Science/Atmospheric Science`
+- `Science/Biology`
+- `Science/Biomedical Eng.`
+- `Science/Chemistry`
+- `Science/Earth Science`
+- `Science/Electrical Eng.`
+- `Science/Geology`
+- `Science/History`
+- `Science/Language`
+- `Science/Life Science`
+- `Science/Math`
+- `Science/Physics`
+- `Science/Religion`
+- `Science/Statistics`
+- `Science/science/color`
+- `Science/science/dna`
+- `Science/science/dna2protein`
+- `Science/science/numerology`
+- `Science/science/plant`
+
+**Social Intelligence (18개):**
+- `Social Intelligence/Bias`
+- `Social Intelligence/Commonsense`
+- `Social Intelligence/Language`
+- `Social Intelligence/Norms`
+- `Social Intelligence/Value/Alignment`
+- `Social Intelligence/misc/abstract`
+- `Social Intelligence/misc/animal`
+- `Social Intelligence/misc/cliche`
+- `Social Intelligence/misc/color`
+- `Social Intelligence/misc/diagnosis`
+- `Social Intelligence/misc/durable`
+- `Social Intelligence/misc/hate_crime`
+- `Social Intelligence/misc/health`
+- `Social Intelligence/misc/idiomatic_expression`
+- `Social Intelligence/misc/norm`
+- `Social Intelligence/misc/proverb`
+- `Social Intelligence/misc/thinking`
+- `Social Intelligence/misc/wellbeing`
+
+**Tech. (62개):**
+- `Tech./AI`
+- `Tech./Aerospace Eng.`
+- `Tech./Agricultural Eng.`
+- `Tech./Biomedical Eng.`
+- `Tech./Chemical Eng.`
+- `Tech./Civil Eng.`
+- `Tech./Coding`
+- `Tech./Electrical Eng.`
+- `Tech./Energy`
+- `Tech./Environmental Eng.`
+- `Tech./Food`
+- `Tech./Geography`
+- `Tech./IT`
+- `Tech./Marine Eng.`
+- `Tech./Materials Eng.`
+- `Tech./Mechanics`
+- `Tech./Nuclear Eng.`
+- `Tech./Physics`
+- `Tech./Urban Eng.`
+- `Tech./tech/aircraft`
+- `Tech./tech/airline`
+- `Tech./tech/airlines`
+- `Tech./tech/algorithm`
+- `Tech./tech/animal`
+- `Tech./tech/animal_welfare`
+- `Tech./tech/animation`
+- `Tech./tech/aquarium`
+- `Tech./tech/automotive`
+- `Tech./tech/aviation`
+- `Tech./tech/azure`
+- `Tech./tech/boat`
+- `Tech./tech/cloud`
+- `Tech./tech/communication`
+- `Tech./tech/communications`
+- `Tech./tech/cv`
+- `Tech./tech/database`
+- `Tech./tech/db`
+- `Tech./tech/dice`
+- `Tech./tech/ethereum`
+- `Tech./tech/finance`
+- `Tech./tech/financial`
+- `Tech./tech/geo_loc`
+- `Tech./tech/geolocation`
+- `Tech./tech/graphics`
+- `Tech./tech/ios`
+- `Tech./tech/marine_biology`
+- `Tech./tech/marine_eng`
+- `Tech./tech/mobile`
+- `Tech./tech/monitoring`
+- `Tech./tech/network`
+- `Tech./tech/ocr`
+- `Tech./tech/office`
+- `Tech./tech/programming`
+- `Tech./tech/real_estate`
+- `Tech./tech/remote_sensing`
+- `Tech./tech/robotics`
+- `Tech./tech/secure`
+- `Tech./tech/security`
+- `Tech./tech/transportation`
+- `Tech./tech/uuid`
+- `Tech./tech/vehicle`
+- `Tech./tech/voice`
 
 **예시:**
 ```json
 {
-  "subject_type": ["Technology", "Tech./Computer Science"]
+  "subject_type": ["Tech.", "Tech./Coding"]
 }
 ```
 
@@ -180,7 +362,7 @@
 {
   "problem_type": "MCQA",
   "target_type": "General",
-  "subject_type": ["Technology", "Tech./Electrical Eng."],
+  "subject_type": ["Tech.", "Tech./Electrical Eng."],
   "task_type": "Knowledge",
   "external_tool_usage": false
 }
@@ -196,7 +378,7 @@ from apps.core.schemas import PlanConfig
 plan = PlanConfig(
     problem_type="MCQA",
     target_type="General",
-    subject_type=["Science", "Math/Algebra"],
+    subject_type=["Science", "Science/Math"],
     task_type="Reasoning",
     external_tool_usage=False,
     language="Korean",
@@ -215,7 +397,7 @@ plan = PlanConfig(
 {
   "problem_type": "MCQA",
   "target_type": "General",
-  "subject_type": ["Technology", "Tech./Computer Science"],
+  "subject_type": ["Tech.", "Tech./Coding"],
   "task_type": "Knowledge",
   "external_tool_usage": false,
   "language": "Korean",
@@ -234,7 +416,7 @@ datasets:
     filters:
       problem_type: "MCQA"
       target_type: "General"
-      subject_type: ["Technology", "Tech./Computer Science"]
+      subject_type: ["Tech.", "Tech./Coding"]
       task_type: "Knowledge"
       external_tool_usage: false
       language: "Korean"
@@ -252,7 +434,7 @@ datasets:
 ### 다중 주제 필터
 ```json
 {
-  "subject_type": ["Science", "Math/Algebra", "Physics/Classical Mechanics"]
+  "subject_type": ["Science", "Science/Math", "Science/Physics"]
 }
 ```
 
@@ -261,7 +443,7 @@ datasets:
 {
   "problem_type": "open-ended",
   "target_type": "Local",
-  "subject_type": ["Culture", "Culture/Korean Traditional"],
+  "subject_type": ["Culture", "Culture/Tradition"],
   "task_type": "Value",
   "external_tool_usage": false
 }
@@ -311,7 +493,7 @@ from apps.core.schemas import PlanConfig
 # 레거시 포맷
 legacy_config = {
     "language": "Korean",
-    "subject_type": "Technology",
+    "subject_type": "Tech.",
     "task_type": "Programming"
 }
 
@@ -319,7 +501,7 @@ legacy_config = {
 benchhub_config = PlanConfig(
     problem_type="MCQA",  # 과업에서 추론
     target_type="General",  # 기본값
-    subject_type=["Technology", "Tech./Computer Science"],  # 확장됨
+    subject_type=["Tech.", "Tech./Coding"],  # 확장됨
     task_type="Knowledge",  # Programming을 매핑
     external_tool_usage=False,  # 기본값
     language=legacy_config["language"],
@@ -335,7 +517,7 @@ benchhub_config = PlanConfig(
    ```
    ValueError: Invalid subject_type 'Programming'. Must be one of the BenchHub categories.
    ```
-   **해결:** `["Technology", "Tech./Computer Science"]`와 같은 유효한 카테고리를 사용하세요.
+   **해결:** `["Tech.", "Tech./Coding"]`와 같은 유효한 카테고리를 사용하세요.
 
 2. **Subject Type이 비어 있음**
    ```
