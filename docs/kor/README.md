@@ -13,22 +13,22 @@ BenchHub Plus는 자연어 질의를 맞춤형 모델 랭킹으로 변환하는 
 ### 사용자 가이드
 - [사용자 매뉴얼](user-manual.md) - 전체 기능 설명
 - [API 레퍼런스](api-reference.md) - REST API 문서
-- [프런트엔드 가이드](frontend-guide.md) - Streamlit 인터페이스 사용법
+- [프런트엔드 가이드](frontend-guide.md) - Streamlit 인터페이스 사용법 (TODO: 추가 예정)
 
 ### 개발
 - [개발 가이드](development.md) - 개발 환경 구축과 규칙
 - [아키텍처](architecture.md) - 시스템 구조와 설계
-- [기여 가이드](contributing.md) - 프로젝트 기여 방법
+- [기여 가이드](contributing.md) - 프로젝트 기여 방법 (TODO: 추가 예정)
 
 ### 배포
 - [Docker 배포](docker-deployment.md) - Docker 기반 배포 안내
-- [프로덕션 설정](production-setup.md) - 운영 환경 구성 방법
-- [모니터링](monitoring.md) - 시스템 모니터링과 유지보수
+- [프로덕션 설정](production-setup.md) - 운영 환경 구성 방법 (TODO: 추가 예정)
+- [모니터링](monitoring.md) - 시스템 모니터링과 유지보수 (TODO: 추가 예정)
 
 ### 고급 주제
 - [BenchHub 구성](BENCHHUB_CONFIG.md) - **BenchHub 구성 파일 구조와 통합 방법**
 - [HRET 통합](HRET_INTEGRATION.md) - **HRET 툴킷 통합 가이드**
-- [사용자 정의 평가](custom-evaluations.md) - 맞춤 평가 시나리오 작성법
+- [사용자 정의 평가](custom-evaluations.md) - 맞춤 평가 시나리오 작성법 (TODO: 추가 예정)
 - [문제 해결](troubleshooting.md) - 자주 발생하는 오류와 해결책
 
 ## 🚀 바로가기

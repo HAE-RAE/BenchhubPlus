@@ -44,7 +44,7 @@ BenchHub Plus 사용 중 자주 발생하는 문제와 해결 방법을 정리�
 - **워커 로그 확인**: `docker compose logs worker`
 - **Redis 연결 테스트**
   ```bash
-docker compose exec worker python -c "import redis; print(redis.Redis(host='redis', port=6379, db=0).ping())"
+  docker compose exec worker python -c "import redis; print(redis.Redis(host='redis', port=6379, db=0).ping())"
   ```
 - **워커 재시작**: `docker compose restart worker`
 

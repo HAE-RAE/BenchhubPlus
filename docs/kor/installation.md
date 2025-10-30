@@ -29,28 +29,28 @@ cp .env.example .env  # API 키 입력
    - macOS/Windows: Docker Desktop 설치
 2. **저장소 클론 및 스크립트 권한 부여**
    ```bash
-git clone https://github.com/HAE-RAE/BenchhubPlus.git
-cd BenchhubPlus
-chmod +x scripts/*.sh
-./scripts/setup.sh
-```
+   git clone https://github.com/HAE-RAE/BenchhubPlus.git
+   cd BenchhubPlus
+   chmod +x scripts/*.sh
+   ./scripts/setup.sh
+   ```
 3. **환경 변수 설정**
    ```bash
-cp .env.example .env
-nano .env
-```
+   cp .env.example .env
+   nano .env
+   ```
    필수 값:
    ```env
-OPENAI_API_KEY=your_openai_api_key_here
-POSTGRES_PASSWORD=secure_password_here
-DEBUG=false
-LOG_LEVEL=info
-```
+   OPENAI_API_KEY=your_openai_api_key_here
+   POSTGRES_PASSWORD=secure_password_here
+   DEBUG=false
+   LOG_LEVEL=info
+   ```
 4. **배포 실행**
    ```bash
-./scripts/deploy.sh development   # 개발용
-./scripts/deploy.sh production    # 운영용
-```
+   ./scripts/deploy.sh development   # 개발용
+   ./scripts/deploy.sh production    # 운영용
+   ```
 
 ## 🔧 로컬 개발 설치 (Docker 미사용)
 1. **시스템 패키지 설치**
@@ -58,44 +58,44 @@ LOG_LEVEL=info
    - macOS: `brew install python@3.11 postgresql redis`
 2. **Python 가상환경 구성**
    ```bash
-python3.11 -m venv venv
-source venv/bin/activate
-pip install --upgrade pip
-pip install -e .
-```
+   python3.11 -m venv venv
+   source venv/bin/activate
+   pip install --upgrade pip
+   pip install -e .
+   ```
 3. **데이터베이스 준비**
    ```bash
-sudo systemctl start postgresql
-sudo -u postgres psql
-```
+   sudo systemctl start postgresql
+   sudo -u postgres psql
+   ```
    ```sql
-CREATE DATABASE benchhub_plus;
-CREATE USER benchhub WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE benchhub_plus TO benchhub;
-```
+   CREATE DATABASE benchhub_plus;
+   CREATE USER benchhub WITH PASSWORD 'your_password';
+   GRANT ALL PRIVILEGES ON DATABASE benchhub_plus TO benchhub;
+   ```
    ```bash
-sudo systemctl start redis
-```
+   sudo systemctl start redis
+   ```
 4. **환경 변수 작성**
    ```bash
-cp .env.example .env
-```
+   cp .env.example .env
+   ```
    ```env
-DATABASE_URL=postgresql://benchhub:your_password@localhost:5432/benchhub_plus
-CELERY_BROKER_URL=redis://localhost:6379/0
-CELERY_RESULT_BACKEND=redis://localhost:6379/0
-OPENAI_API_KEY=your_openai_api_key_here
-```
+   DATABASE_URL=postgresql://benchhub:your_password@localhost:5432/benchhub_plus
+   CELERY_BROKER_URL=redis://localhost:6379/0
+   CELERY_RESULT_BACKEND=redis://localhost:6379/0
+   OPENAI_API_KEY=your_openai_api_key_here
+   ```
 5. **데이터베이스 초기화**
    ```bash
-python -c "from apps.core.db import init_db; init_db()"
-```
+   python -c "from apps.core.db import init_db; init_db()"
+   ```
 6. **서비스 실행**
    ```bash
-./scripts/dev-backend.sh   # 백엔드
-./scripts/dev-worker.sh    # 워커
-./scripts/dev-frontend.sh  # 프런트엔드
-```
+   ./scripts/dev-backend.sh   # 백엔드
+   ./scripts/dev-worker.sh    # 워커
+   ./scripts/dev-frontend.sh  # 프런트엔드
+   ```
 
 ## 추가 팁
 - Windows에서는 WSL2(Ubuntu) 환경을 권장합니다.

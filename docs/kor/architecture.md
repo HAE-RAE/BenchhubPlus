@@ -5,11 +5,11 @@ BenchHub Plus의 전체 구조와 주요 컴포넌트를 요약합니다.
 ## 🏗️ 상위 구조
 ```
 Streamlit 프런트엔드 ⇄ FastAPI 백엔드 ⇄ Celery 워커
-                │                  │
-                ▼                  ▼
-           PostgreSQL DB        Redis 캐시
-                   │
-             HRET 통합 계층
+                        │               │
+                        ▼               ▼
+                  PostgreSQL DB      Redis 캐시
+                        │
+                  HRET 통합 계층
 ```
 
 ## 주요 계층
