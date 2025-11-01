@@ -10,6 +10,7 @@ from openai import OpenAI
 
 from ..config import get_settings
 from ..schemas import ModelInfo, PlanConfig
+from ..categories import BENCHHUB_COARSE_CATEGORIES, BENCHHUB_FINE_CATEGORIES
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -31,37 +32,43 @@ class PlannerAgent:
     def parse_query(self, query: str) -> PlanConfig:
         """Parse natural language query into structured plan configuration."""
         
-        system_prompt = """You are an expert evaluation planner for language models using BenchHub dataset structure.
-Your task is to convert natural language queries into structured evaluation plans following BenchHub configuration.
+        lines = []
+        for coarse in BENCHHUB_COARSE_CATEGORIES:
+            lines.append(f"- {coarse} (coarse category)")
+            for fine in BENCHHUB_FINE_CATEGORIES.get(coarse, []):
+                lines.append(f"  - {fine}")
+        categories_text = "\n".join(lines)
+        
+        system_prompt = f"""You are an expert evaluation planner for language models using the BenchHub dataset.
 
-Given a user query, extract the following information:
+Your job: Convert a natural-language query into a STRICT BenchHub plan JSON with these exact keys:
+
 1. problem_type: Problem format - one of ["Binary", "MCQA", "short-form", "open-ended"]
 2. target_type: Target scope - one of ["General", "Local"] 
-3. subject_type: Subject categories - list from BenchHub categories (can include both coarse and fine-grained)
+3. subject_type: Subject categories - array of categories chosen ONLY from the allowed BenchHub categories below
 4. task_type: Task type - one of ["Knowledge", "Reasoning", "Value", "Alignment"]
 5. external_tool_usage: Whether external tools are needed - boolean
 6. language: Target language (Korean, English, etc.)
 7. sample_size: Number of samples to evaluate (default: 100, max: 1000)
 
-BenchHub Categories:
-- Art & Sports: Art & Sports/Music, Art & Sports/arts&sports/design, Art & Sports/Urban Eng., etc.
-- Culture: Culture/Tradition, Culture/Food, Culture/culture/hobbies, etc.
-- HASS: HASS/History, HASS/Philosophy, HASS/social&humanity/finance, etc.
-- Science: Science/Math, Science/Biology, Science/science/dna, etc.
-- Social Intelligence: Social Intelligence/Commonsense, Social Intelligence/misc/idiomatic_expression, etc.
-- Tech.: Tech./Coding, Tech./Aerospace Eng., Tech./tech/robotics, etc.
+STRICT RULES:
+- Use ONLY the allowed categories. DO NOT invent new categories or variations. Spelling must match exactly.
+- subject_type must be a JSON array (e.g., ["Science","Science/Math"]); at least one valid category.
+- Output ONLY a single JSON object. No explanation, no extra text.
+- If the user intent is vague, prefer coarse categories (e.g., "Science") and a safe default sample_size (100).
 
-Return your response as a JSON object with these exact keys.
+Allowed BenchHub categories (coarse + examples of fine):
+{categories_text}
 
-Examples:
+Examples (STRICT JSON only):
 Query: "한국어로 된 프로그래밍 문제를 잘 푸는 모델을 찾고 싶어"
-Response: {"problem_type": "MCQA", "target_type": "General", "subject_type": ["Tech.", "Tech./Coding"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 100}
+Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Tech.", "Tech./Coding"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 100}}
 
 Query: "Which model is best at English math problems?"
-Response: {"problem_type": "MCQA", "target_type": "General", "subject_type": ["Science", "Science/Math"], "task_type": "Reasoning", "external_tool_usage": false, "language": "English", "sample_size": 100}
+Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Science", "Science/Math"], "task_type": "Reasoning", "external_tool_usage": false, "language": "English", "sample_size": 100}}
 
 Query: "I need to evaluate models on Korean traditional culture knowledge with 200 samples"
-Response: {"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Culture", "Culture/Tradition"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 200}
+Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Culture", "Culture/Tradition"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 200}}
 """
         
         user_prompt = f"Query: {query}\nResponse:"
