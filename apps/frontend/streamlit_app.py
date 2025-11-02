@@ -6,6 +6,7 @@ import os
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 
 import pandas as pd
 import plotly.express as px
@@ -376,106 +377,245 @@ def render_evaluation_results(results: Dict[str, Any]):
 
 
 def render_leaderboard_browser():
-    """Render leaderboard browser."""
+    """Render leaderboard browser with chat-assisted filtering."""
     
     st.subheader("🏅 Browse Leaderboards")
     
+    # Session state initialization for browse interactions
+    if "browse_chat_history" not in st.session_state:
+        st.session_state.browse_chat_history = [
+            {
+                "role": "assistant",
+                "content": "안녕하세요! 관심 있는 주제를 말씀해 주시면 리더보드 필터를 추천해 드릴게요."
+            }
+        ]
+    if "browse_initial_loaded" not in st.session_state:
+        st.session_state.browse_initial_loaded = False
+    if "browse_trigger_search" not in st.session_state:
+        st.session_state.browse_trigger_search = False
+    if "browse_last_result" not in st.session_state:
+        st.session_state.browse_last_result = None
+    if "browse_limit" not in st.session_state:
+        st.session_state.browse_limit = 100
+    if "browse_language_filter" not in st.session_state:
+        st.session_state.browse_language_filter = "All"
+    if "browse_subject_filter" not in st.session_state:
+        st.session_state.browse_subject_filter = "All"
+    if "browse_task_filter" not in st.session_state:
+        st.session_state.browse_task_filter = "All"
+    if "browse_categories" not in st.session_state:
+        categories_data = make_api_request("/api/v1/leaderboard/categories")
+        st.session_state.browse_categories = categories_data or {}
+    
+    categories = st.session_state.get("browse_categories", {}) or {}
+    
+    def render_results(result: Optional[Dict[str, Any]]) -> None:
+        """Display leaderboard results stored in session state."""
+        if not result:
+            st.info("아직 리더보드 데이터를 불러오지 못했어요.")
+            return
+        
+        entries = result.get("entries", [])
+        if not entries:
+            st.info("조건에 맞는 리더보드 항목이 없습니다.")
+            return
+        
+        df = pd.DataFrame([
+            {
+                "Rank": i + 1,
+                "Model": entry.get("model_name"),
+                "Score": entry.get("score"),
+                "Language": entry.get("language"),
+                "Subject": entry.get("subject_type"),
+                "Task": entry.get("task_type"),
+                "Last Updated": (entry.get("last_updated") or "")[:10]
+            }
+            for i, entry in enumerate(entries)
+        ])
+        
+        st.write(f"**총 {len(entries)}개 항목**")
+        if result.get("query"):
+            st.caption(f"현재 필터: {result['query']}")
+        
+        st.dataframe(
+            df.style.format({
+                "Score": "{:.3f}"
+            }).background_gradient(subset=["Score"]),
+            use_container_width=True
+        )
+        
+        if len(df) > 0:
+            top_10 = df.head(10)
+            fig = px.bar(
+                top_10,
+                x="Score",
+                y="Model",
+                orientation="h",
+                title="Top 10 Models",
+                color="Score",
+                color_continuous_scale="viridis"
+            )
+            fig.update_layout(yaxis={"categoryorder": "total ascending"})
+            st.plotly_chart(fig, use_container_width=True)
+    
+    def perform_leaderboard_fetch() -> None:
+        """Fetch leaderboard entries based on current filters."""
+        params: Dict[str, Any] = {
+            "limit": int(st.session_state.browse_limit)
+        }
+        
+        if st.session_state.browse_language_filter != "All":
+            params["language"] = st.session_state.browse_language_filter
+        if st.session_state.browse_subject_filter != "All":
+            params["subject_type"] = st.session_state.browse_subject_filter
+        if st.session_state.browse_task_filter != "All":
+            params["task_type"] = st.session_state.browse_task_filter
+        
+        query_string = urlencode(params)
+        endpoint = "/api/v1/leaderboard/browse"
+        if query_string:
+            endpoint = f"{endpoint}?{query_string}"
+        
+        with st.spinner("Fetching leaderboard..."):
+            result = make_api_request(endpoint)
+        
+        st.session_state.browse_last_result = result
+        st.session_state.browse_initial_loaded = True
+    
+    # Chat assistant
+    st.markdown("### 🗣️ Browse Assistant")
+    for message in st.session_state.browse_chat_history:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    
+    user_query = st.chat_input("원하는 리더보드 주제를 입력해 주세요", key="browse_chat_input")
+    if user_query:
+        st.session_state.browse_chat_history.append({
+            "role": "user",
+            "content": user_query
+        })
+        
+        with st.spinner("추천 필터를 준비하고 있어요..."):
+            suggestion = make_api_request(
+                "/api/v1/leaderboard/suggest",
+                method="POST",
+                data={"query": user_query}
+            )
+        
+        if suggestion:
+            display_lines = [suggestion.get("plan_summary", "추천 필터를 적용했어요.")]
+            filter_lines = []
+            
+            if suggestion.get("language"):
+                filter_lines.append(f"- 언어: **{suggestion['language']}**")
+            if suggestion.get("subject_type"):
+                filter_lines.append(f"- 주제: **{suggestion['subject_type']}**")
+            if suggestion.get("task_type"):
+                filter_lines.append(f"- 태스크: **{suggestion['task_type']}**")
+            
+            subject_candidates = suggestion.get("subject_type_options") or []
+            if subject_candidates:
+                candidate_text = ", ".join(subject_candidates)
+                filter_lines.append(f"- 관련 주제 후보: {candidate_text}")
+            
+            if filter_lines:
+                display_lines.append("\n".join(filter_lines))
+            
+            if not suggestion.get("used_planner", False):
+                display_lines.append("_플래너 에이전트가 없어 기본 추천을 사용했어요._")
+            
+            assistant_message = "\n\n".join(display_lines)
+            st.session_state.browse_chat_history.append({
+                "role": "assistant",
+                "content": assistant_message
+            })
+            
+            if suggestion.get("language"):
+                st.session_state.browse_language_filter = suggestion["language"]
+            if suggestion.get("subject_type"):
+                st.session_state.browse_subject_filter = suggestion["subject_type"]
+            if suggestion.get("task_type"):
+                st.session_state.browse_task_filter = suggestion["task_type"]
+            
+            st.session_state.browse_trigger_search = True
+        else:
+            st.session_state.browse_chat_history.append({
+                "role": "assistant",
+                "content": "죄송해요, 추천 필터를 생성하지 못했어요. 다시 시도해 주세요."
+            })
+    
     # Filters
+    language_options = ["All"] + sorted([
+        lang for lang in categories.get("languages", []) if lang
+    ])
+    subject_options = ["All"] + sorted([
+        subj for subj in categories.get("subject_types", []) if subj
+    ])
+    task_options = ["All"] + sorted([
+        task for task in categories.get("task_types", []) if task
+    ])
+    
+    current_language = st.session_state.browse_language_filter
+    if current_language and current_language not in language_options:
+        language_options.append(current_language)
+    current_subject = st.session_state.browse_subject_filter
+    if current_subject and current_subject not in subject_options:
+        subject_options.append(current_subject)
+    current_task = st.session_state.browse_task_filter
+    if current_task and current_task not in task_options:
+        task_options.append(current_task)
+    
+    language_options = list(dict.fromkeys(language_options))
+    subject_options = list(dict.fromkeys(subject_options))
+    task_options = list(dict.fromkeys(task_options))
+    
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        language_filter = st.selectbox(
+        st.selectbox(
             "Language",
-            ["All", "English", "Korean", "Chinese", "Japanese"],
-            help="Filter by language"
+            language_options,
+            help="Filter by language",
+            key="browse_language_filter"
         )
     
     with col2:
-        subject_filter = st.selectbox(
+        st.selectbox(
             "Subject",
-            ["All", "Math", "Science", "History", "Literature", "General"],
-            help="Filter by subject type"
+            subject_options,
+            help="Filter by subject type",
+            key="browse_subject_filter"
         )
     
     with col3:
-        task_filter = st.selectbox(
+        st.selectbox(
             "Task Type",
-            ["All", "QA", "Classification", "Generation", "Reasoning"],
-            help="Filter by task type"
+            task_options,
+            help="Filter by task type",
+            key="browse_task_filter"
         )
     
     with col4:
-        limit = st.number_input(
+        st.number_input(
             "Max Results",
             min_value=10,
             max_value=1000,
-            value=100,
-            help="Maximum number of results"
+            value=st.session_state.browse_limit,
+            step=10,
+            help="Maximum number of results",
+            key="browse_limit"
         )
     
-    # Fetch leaderboard
-    if st.button("🔍 Search Leaderboard"):
-        params = {
-            "limit": limit
-        }
-        
-        if language_filter != "All":
-            params["language"] = language_filter
-        if subject_filter != "All":
-            params["subject_type"] = subject_filter
-        if task_filter != "All":
-            params["task_type"] = task_filter
-        
-        # Build query string
-        query_string = "&".join([f"{k}={v}" for k, v in params.items()])
-        
-        with st.spinner("Fetching leaderboard..."):
-            result = make_api_request(f"/api/v1/leaderboard/browse?{query_string}")
-        
-        if result and "entries" in result:
-            entries = result["entries"]
-            
-            if entries:
-                # Create DataFrame
-                df = pd.DataFrame([
-                    {
-                        "Rank": i + 1,
-                        "Model": entry["model_name"],
-                        "Score": entry["score"],
-                        "Language": entry["language"],
-                        "Subject": entry["subject_type"],
-                        "Task": entry["task_type"],
-                        "Last Updated": entry["last_updated"][:10]  # Date only
-                    }
-                    for i, entry in enumerate(entries)
-                ])
-                
-                # Display results
-                st.write(f"**Found {len(entries)} entries**")
-                
-                st.dataframe(
-                    df.style.format({
-                        "Score": "{:.3f}"
-                    }).background_gradient(subset=["Score"]),
-                    use_container_width=True
-                )
-                
-                # Top performers chart
-                if len(df) > 0:
-                    top_10 = df.head(10)
-                    fig = px.bar(
-                        top_10,
-                        x="Score",
-                        y="Model",
-                        orientation="h",
-                        title="Top 10 Models",
-                        color="Score",
-                        color_continuous_scale="viridis"
-                    )
-                    fig.update_layout(yaxis={'categoryorder':'total ascending'})
-                    st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("No entries found matching the criteria")
+    search_button_clicked = st.button("🔍 Search Leaderboard", use_container_width=True)
+    
+    if not st.session_state.browse_initial_loaded and not st.session_state.browse_trigger_search:
+        st.session_state.browse_trigger_search = True
+    
+    if search_button_clicked or st.session_state.browse_trigger_search:
+        st.session_state.browse_trigger_search = False
+        perform_leaderboard_fetch()
+    
+    render_results(st.session_state.browse_last_result)
 
 
 def render_system_status():

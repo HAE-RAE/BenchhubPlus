@@ -11,6 +11,8 @@ from ...core.db import get_db
 from ...core.schemas import (
     LeaderboardQuery,
     LeaderboardResponse,
+    LeaderboardSuggestionRequest,
+    LeaderboardSuggestionResponse,
     TaskResponse,
     ErrorResponse
 )
@@ -76,6 +78,27 @@ async def browse_leaderboard(
         
     except Exception as e:
         logger.error(f"Failed to browse leaderboard: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/suggest", response_model=LeaderboardSuggestionResponse)
+async def suggest_leaderboard_filters(
+    payload: LeaderboardSuggestionRequest,
+    db: Session = Depends(get_db)
+):
+    """Suggest leaderboard filters derived from a natural language query."""
+    
+    try:
+        orchestrator = EvaluationOrchestrator(db)
+        suggestion = orchestrator.suggest_leaderboard_filters(payload.query)
+        logger.info(
+            "Provided leaderboard suggestion for query '%s' (used_planner=%s)",
+            payload.query,
+            suggestion.used_planner
+        )
+        return suggestion
+    except Exception as e:
+        logger.error(f"Failed to suggest leaderboard filters: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
