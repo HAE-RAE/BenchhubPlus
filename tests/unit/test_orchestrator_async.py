@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from apps.backend.services.orchestrator import EvaluationOrchestrator
-from apps.core.schemas import LeaderboardQuery, ModelInfo
+from apps.core.schemas import LeaderboardQuery, ModelInfo, PlanConfig
 
 
 @pytest.fixture
@@ -121,3 +121,52 @@ def test_generate_leaderboard_dispatch_failure_marks_task(sample_query, planner_
     assert args[0] == created_task_id
     assert args[1] == "FAILURE"
     assert "queue offline" in kwargs.get("error_message", "")
+
+
+def test_suggest_filters_uses_planner_recommendation(planner_plan):
+    orchestrator, _, planner_agent = _build_orchestrator(planner_plan)
+    plan_config = PlanConfig(
+        problem_type="MCQA",
+        target_type="General",
+        subject_type=["Science", "Science/Math"],
+        task_type="Reasoning",
+        external_tool_usage=False,
+        language="Korean",
+        sample_size=50,
+    )
+    planner_agent.parse_query.return_value = plan_config
+
+    suggestion = orchestrator.suggest_leaderboard_filters("한국어 과학 추론 문제를 보고 싶어요")
+
+    assert suggestion.used_planner is True
+    assert suggestion.language == "Korean"
+    assert suggestion.subject_type == "Science/Math"
+    assert suggestion.task_type == "Reasoning"
+    assert suggestion.subject_type_options == ["Science", "Science/Math"]
+    assert "plan_config" in suggestion.metadata
+    assert "Korean" in suggestion.plan_summary
+
+
+def test_suggest_filters_empty_query_returns_full_leaderboard(planner_plan):
+    orchestrator, _, planner_agent = _build_orchestrator(planner_plan)
+    suggestion = orchestrator.suggest_leaderboard_filters("   ")
+
+    assert suggestion.used_planner is False
+    assert suggestion.language is None
+    assert suggestion.subject_type is None
+    assert suggestion.task_type is None
+    assert suggestion.plan_summary == "필터 없이 전체 리더보드를 보여드릴게요."
+
+
+def test_suggest_filters_falls_back_when_planner_errors(planner_plan):
+    orchestrator, _, planner_agent = _build_orchestrator(planner_plan)
+    planner_agent.parse_query.side_effect = RuntimeError("planner offline")
+
+    suggestion = orchestrator.suggest_leaderboard_filters("Show me coding evaluations")
+
+    assert suggestion.used_planner is False
+    assert suggestion.language == "English"
+    assert suggestion.subject_type == "Science"
+    assert suggestion.task_type == "Knowledge"
+    assert suggestion.subject_type_options == ["Science"]
+    assert suggestion.metadata.get("planner_error") == "planner offline"

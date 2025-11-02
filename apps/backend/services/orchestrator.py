@@ -15,6 +15,7 @@ from ...core.schemas import (
     LeaderboardQuery,
     LeaderboardResponse,
     LeaderboardEntry,
+    LeaderboardSuggestionResponse,
     TaskResponse,
     ModelInfo,
     PlanConfig
@@ -284,6 +285,84 @@ class EvaluationOrchestrator:
             query=query_description,
             generated_at=datetime.utcnow(),
             total_models=len(leaderboard_entries)
+        )
+
+    def _default_plan_config(self) -> PlanConfig:
+        """Create a safe default plan configuration."""
+        return PlanConfig(
+            problem_type="MCQA",
+            target_type="General",
+            subject_type=["Science"],
+            task_type="Knowledge",
+            external_tool_usage=False,
+            language="English",
+            sample_size=100
+        )
+
+    def suggest_leaderboard_filters(self, query: str) -> LeaderboardSuggestionResponse:
+        """Suggest leaderboard filters based on a natural language query."""
+        
+        normalized_query = (query or "").strip()
+        
+        if not normalized_query:
+            return LeaderboardSuggestionResponse(
+                query=query or "",
+                language=None,
+                subject_type=None,
+                task_type=None,
+                subject_type_options=[],
+                plan_summary="필터 없이 전체 리더보드를 보여드릴게요.",
+                used_planner=False,
+                metadata={"reason": "empty_query"}
+            )
+        
+        plan_config: Optional[PlanConfig] = None
+        used_planner = False
+        planner_error: Optional[str] = None
+        
+        if self.planner_agent:
+            try:
+                plan_config = self.planner_agent.parse_query(normalized_query)
+                used_planner = True
+            except Exception as e:
+                planner_error = str(e)
+                logger.warning("Planner failed to parse query '%s': %s", normalized_query, e)
+        
+        if plan_config is None:
+            plan_config = self._default_plan_config()
+        
+        subject_options: List[str] = []
+        raw_subjects = plan_config.subject_type
+        if isinstance(raw_subjects, list):
+            subject_options = [item for item in raw_subjects if isinstance(item, str) and item]
+        elif isinstance(raw_subjects, str):
+            subject_options = [raw_subjects]
+        
+        primary_subject = subject_options[-1] if subject_options else None
+        language = plan_config.language or None
+        task_type = plan_config.task_type or None
+        
+        summary_parts = [
+            language or "모든 언어",
+            primary_subject or "전체 과목",
+            task_type or "전체 태스크"
+        ]
+        plan_summary = " · ".join(summary_parts) + " 기준으로 추천 필터를 설정했어요."
+        
+        metadata: Dict[str, Any] = {
+            "plan_config": plan_config.dict(),
+            "planner_error": planner_error
+        }
+        
+        return LeaderboardSuggestionResponse(
+            query=normalized_query,
+            language=language,
+            subject_type=primary_subject,
+            task_type=task_type,
+            subject_type_options=subject_options,
+            plan_summary=plan_summary,
+            used_planner=used_planner,
+            metadata=metadata
         )
     
     def update_cache_from_results(

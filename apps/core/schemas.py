@@ -68,6 +68,25 @@ class LeaderboardResponse(BaseModel):
         return sorted(v, key=lambda x: x.score, reverse=True)
 
 
+class LeaderboardSuggestionRequest(BaseModel):
+    """Request payload for leaderboard filter suggestions."""
+    
+    query: str = Field(..., description="User query describing desired leaderboard focus")
+
+
+class LeaderboardSuggestionResponse(BaseModel):
+    """Suggested filters derived from natural language query."""
+    
+    query: str
+    language: Optional[str] = None
+    subject_type: Optional[str] = None
+    task_type: Optional[str] = None
+    subject_type_options: List[str] = Field(default_factory=list)
+    plan_summary: str
+    used_planner: bool = False
+    metadata: Optional[Dict[str, Any]] = None
+
+
 class TaskStatus(BaseModel):
     """Task status information."""
     
