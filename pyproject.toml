@@ -54,7 +54,8 @@ dependencies = [
     "vllm>=0.4.0",
     
     # Data Processing
-    "pandas>=2.1.0",
+    "pandas>=2.0.0",
+    "pyarrow>=14.0.0",
     "numpy>=1.24.0",
     "pyyaml>=6.0.0",
     

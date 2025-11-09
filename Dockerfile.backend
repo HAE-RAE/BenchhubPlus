@@ -17,9 +17,13 @@ COPY README.md ./
 # Install Python dependencies
 RUN pip install --no-cache-dir -e .
 
+# 1. Parquet 시드 데이터를 위한 디렉토리 생성
+RUN mkdir -p /app/data
+# 2. 로컬의 Parquet 파일을 이미지로 복사
+COPY seeds/seed_data.parquet /app/data/seed_data.parquet
+
 # Copy application code
 COPY apps/ ./apps/
-COPY logs/ ./logs/
 
 # Create logs directory
 RUN mkdir -p logs

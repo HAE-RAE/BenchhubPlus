@@ -196,3 +196,6 @@ Thumbs.db
 
 # Streamlit
 .streamlit/
+
+# 원시 벤치마크 데이터 파일 제외
+*.jsonl
