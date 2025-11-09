@@ -87,6 +87,65 @@ docker compose exec postgres psql -U benchhub       # DB 접속
 - **모델 API 오류**: API 키가 올바른지 확인하고 네트워크 정책을 점검
 - **데이터베이스 초기화 실패**: `init.sql` 매핑 여부와 권한 설정을 확인
 
+## 🗄️ 데이터베이스 시딩
+
+BenchHub Plus는 사전 집계된 벤치마크 데이터를 Parquet 파일로부터 자동으로 로드하는 시딩 시스템을 사용합니다.
+
+### 시드 데이터 요구사항
+
+**중요**: 배포 전에 저장소 루트에 `seeds/seed_data.parquet` 파일이 존재해야 합니다. 이 파일은 사전 집계된 평가 결과를 포함하며 컨테이너 시작 시 자동으로 로드됩니다.
+
+#### 시드 파일 스키마
+
+Parquet 파일은 다음 컬럼들을 포함해야 합니다:
+
+| 컬럼명 | 타입 | 설명 | 예시 |
+|--------|------|------|------|
+| `model_name` | string | 모델 고유 식별자 | "Qwen_Qwen2.5-72B-Instruct" |
+| `language` | string | 평가 언어 | "Korean", "English" |
+| `subject_type` | string | 주제 카테고리 | "HASS/Economics", "Tech./Coding" |
+| `task_type` | string | 과업 유형 | "Knowledge", "Reasoning" |
+| `score` | float64 | 성능 점수 (0.0-1.0) | 0.852 |
+
+#### 시딩 과정
+
+1. **시작 시 확인**: 백엔드 컨테이너 시작 시 LeaderboardCache 테이블이 비어있는지 확인
+2. **자동 시딩**: 비어있으면 `seeds/seed_data.parquet`를 읽어 데이터베이스 채움
+3. **멱등성 보장**: 데이터가 이미 존재하면 중복 방지를 위해 시딩 건너뜀
+4. **로깅**: 모든 시딩 작업이 모니터링을 위해 로그에 기록됨
+
+#### 예상 로그 메시지
+
+**첫 배포 (빈 데이터베이스):**
+```
+INFO:apps.backend.seeding:Database is empty. Seeding initial data from 'data/seed_data.parquet'...
+INFO:apps.backend.seeding:Database seeding complete. Added 4528 records.
+```
+
+**재배포 (기존 데이터 존재):**
+```
+INFO:apps.backend.seeding:LeaderboardCache already contains data. Skipping seeding.
+```
+
+#### 시드 파일 누락 시
+
+시드 파일이 없으면 애플리케이션은 정상 시작되지만 빈 리더보드로 시작됩니다:
+
+```
+WARNING:apps.backend.seeding:Seed file not found at 'data/seed_data.parquet'. Skipping.
+```
+
+### 시딩 문제 해결
+
+**문제**: 시딩 오류로 컨테이너 시작 실패  
+**해결**: `seeds/seed_data.parquet` 파일 존재 여부와 올바른 스키마 확인
+
+**문제**: 재시작 후 데이터 중복  
+**해결**: 멱등성 검사로 인해 발생하지 않아야 함. 발생 시 LeaderboardRepository.get_leaderboard() 메서드 확인
+
+**문제**: 시딩 시간이 너무 오래 걸림  
+**해결**: 시드 파일 크기 최적화 또는 대량 삽입 작업 구현 고려
+
 ## 추가 참고 문서
 - [설치 가이드](SETUP_GUIDE.md)
 - [트러블슈팅](troubleshooting.md)

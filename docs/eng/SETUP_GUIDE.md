@@ -7,6 +7,7 @@ This guide provides step-by-step instructions for setting up and running the Ben
 - Python 3.8+
 - Git
 - OpenAI API key (or other LLM provider API key)
+- **Seed Data File**: `seeds/seed_data.parquet` (see [Database Seeding](#database-seeding) section)
 
 ## Quick Start
 
@@ -79,14 +80,60 @@ redis-cli ping
 # Should return: PONG
 ```
 
-### 5. Initialize Database
+### 5. Database Seeding
+
+BenchHub Plus uses a Parquet-based database seeding system for efficient initialization. The system automatically loads pre-aggregated benchmark data from `seeds/seed_data.parquet` when the application starts.
+
+#### Prepare Seed Data File
+
+**Important**: You need to create the `seeds/seed_data.parquet` file before running the application. This file should contain pre-aggregated benchmark results with the following schema:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `model_name` | string | Model identifier (e.g., "Qwen_Qwen2.5-72B-Instruct") |
+| `language` | string | Evaluation language ("Korean" or "English") |
+| `subject_type` | string | Subject category (e.g., "HASS/Economics", "Tech./Coding") |
+| `task_type` | string | Task type (e.g., "Knowledge", "Reasoning") |
+| `score` | float64 | Aggregated performance score (0.0 to 1.0) |
+
+#### Create Seed Data Directory
+
+```bash
+mkdir -p seeds
+```
+
+#### Generate Seed Data (Example)
+
+If you have raw evaluation results in JSONL format, you can aggregate them into the required Parquet format:
+
+```python
+import pandas as pd
+
+# Example: Load and aggregate your evaluation results
+# Replace this with your actual data processing logic
+data = [
+    {
+        'model_name': 'GPT-4',
+        'language': 'English',
+        'subject_type': 'HASS/Economics',
+        'task_type': 'Knowledge',
+        'score': 0.85
+    },
+    # ... more records
+]
+
+df = pd.DataFrame(data)
+df.to_parquet('seeds/seed_data.parquet', index=False)
+print(f"Seed file created with {len(df)} records")
+```
+
+#### Initialize Database
 
 Create the SQLite database and required tables:
 
 ```bash
 python -c "
-from apps.backend.database import engine, Base
-from apps.backend.models import *
+from apps.core.db import engine, Base
 Base.metadata.create_all(bind=engine)
 print('Database initialized successfully')
 "
@@ -96,6 +143,8 @@ Create logs directory:
 ```bash
 mkdir -p logs
 ```
+
+**Note**: The database will be automatically seeded with data from `seeds/seed_data.parquet` when the backend service starts. If the seed file is missing, the application will start normally but with an empty leaderboard.
 
 ### 6. Start Services
 
