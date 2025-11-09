@@ -77,7 +77,7 @@ class EvaluationOrchestrator:
                 self.tasks_repo.update_task_status(
                     task_id, 
                     "SUCCESS", 
-                    json.dumps(cached_results)
+                    json.dumps(cached_results, default=str)
                 )
                 
                 return TaskResponse(
@@ -183,6 +183,13 @@ class EvaluationOrchestrator:
         try:
             config = PlanConfig(**plan_metadata["config"])
             
+            # Normalize subject_type from list to string (DB stores as string)
+            subject_key = (
+                "/".join(config.subject_type)
+                if isinstance(config.subject_type, list)
+                else str(config.subject_type)
+            )
+            
             # Check cache for each model
             cached_entries = []
             cache_hit_count = 0
@@ -191,7 +198,7 @@ class EvaluationOrchestrator:
                 cached_entry = self.leaderboard_repo.get_cached_entry(
                     model.name,
                     config.language,
-                    config.subject_type,
+                    subject_key,
                     config.task_type
                 )
                 
@@ -220,6 +227,7 @@ class EvaluationOrchestrator:
             
         except Exception as e:
             logger.warning(f"Cache check failed: {e}")
+            self.db.rollback()
             return None
     
     def _create_fallback_plan(self, query: LeaderboardQuery) -> str:
@@ -382,8 +390,15 @@ class EvaluationOrchestrator:
             config = plan_data.get("config", {})
             
             language = config.get("language", "Unknown")
-            subject_type = config.get("subject_type", "Unknown")
+            subject_type_raw = config.get("subject_type", "Unknown")
             task_type = config.get("task_type", "Unknown")
+
+            # Normalize subject_type from plan (can be list)
+            subject_key = (
+                "/".join(subject_type_raw)
+                if isinstance(subject_type_raw, list)
+                else str(subject_type_raw)
+            )
             
             # Update cache for each model result
             for result in evaluation_results:
@@ -394,7 +409,7 @@ class EvaluationOrchestrator:
                     self.leaderboard_repo.upsert_entry(
                         model_name=model_name,
                         language=language,
-                        subject_type=subject_type,
+                        subject_type=subject_key,
                         task_type=task_type,
                         score=float(score)
                     )

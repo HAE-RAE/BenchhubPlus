@@ -82,7 +82,7 @@ services:
       - .:/app  # Mount source code for development
       - ./logs:/app/logs
       - /tmp:/tmp
-    command: ["python", "-m", "celery", "worker", "-A", "apps.worker.celery_app", "--loglevel=debug", "--concurrency=1"]
+    command: ["python", "-m", "celery", "-A", "apps.worker.celery_app", "worker", "--loglevel=debug", "--concurrency=1", "--queues", "evaluation,maintenance"]
 
   # Streamlit Frontend (Development)
   frontend:
