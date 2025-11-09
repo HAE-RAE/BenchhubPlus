@@ -84,11 +84,36 @@ class HRETRunner:
             
             # Create HRET configuration for each dataset
             for dataset_config in datasets:
+                # Prepare dataset params - exclude split/subset as they're set explicitly
+                original_params = dataset_config.get("params", {})
+                dataset_params = {
+                    k: v for k, v in original_params.items()
+                    if k not in ['split', 'subset']
+                }
+                
+                # Add sample_size and seed if present at dataset level
+                if "sample_size" in dataset_config:
+                    dataset_params["sample_size"] = dataset_config["sample_size"]
+                if "seed" in dataset_config:
+                    dataset_params["seed"] = dataset_config["seed"]
+                
+                # Add base_prompt_template for MCQA
+                filters = dataset_config.get("filters", {})
+                problem_type = filters.get("problem_type") or metadata.get("problem_type", "")
+                if problem_type == "MCQA":
+                    dataset_params["base_prompt_template"] = (
+                        "{query}\n\n"
+                        "Choices:\n"
+                        "{options_str}\n\n"
+                        "Answer with ONLY the option text (without the number prefix like '1.' or '2.'). "
+                        "Do not include any additional text, explanation, or formatting:"
+                    )
+                
                 config = {
                     "dataset": {
                         "name": dataset_config.get("name", "benchhub"),
-                        "split": dataset_config.get("split", "test"),
-                        "params": dataset_config.get("params", {})
+                        "split": "train",  # BenchHub only has 'train' split
+                        "params": dataset_params
                     },
                     "model": {
                         "name": model_backend,
@@ -147,7 +172,9 @@ class HRETRunner:
         
         if "openai" in model_type:
             params.update({
-                "model": model.get("model_name", "gpt-3.5-turbo"),
+                "model_name": model.get("model_name", model.get("name", "gpt-3.5-turbo")),
+                "api_base": model.get("api_base"),
+                "api_key": model.get("api_key"),
                 "temperature": model.get("temperature", 0.0),
                 "max_tokens": model.get("max_tokens", 1024)
             })
@@ -203,7 +230,7 @@ class HRETRunner:
                     evaluator_params=config["evaluation"]["params"],
                     language_penalize=config["language_penalize"],
                     target_lang=config["target_lang"],
-                    few_shot=config["few_shot"]
+                    num_few_shot=config["few_shot"].get("num", 0)
                 )
                 
                 # Convert HRET result to BenchhubPlus format
@@ -251,12 +278,45 @@ class HRETRunner:
         # Extract metrics from HRET result
         metrics = hret_result.metrics if hasattr(hret_result, 'metrics') else {}
         
+        # Calculate total_samples and correct_samples from samples
+        samples = getattr(hret_result, 'samples', []) if hasattr(hret_result, 'samples') else []
+        total_samples = len(samples)
+        correct_samples = sum(
+            1 for s in samples 
+            if isinstance(s, dict) and s.get('evaluation', {}).get('is_correct', False)
+        )
+        
+        ### Debug: Print first 5 samples for inspection ###
+        # logger.warning(f"\n{'='*80}")
+        # logger.warning(f"Evaluation Results Summary")
+        # logger.warning(f"{'='*80}")
+        # logger.warning(f"Model: {model_info['name']}")
+        # logger.warning(f"Total Samples: {total_samples}")
+        # logger.warning(f"Correct Samples: {correct_samples}")
+        # logger.warning(f"Accuracy: {correct_samples / total_samples * 100:.1f}%" if total_samples > 0 else "N/A")
+        # logger.warning(f"\n{'='*80}")
+        # logger.warning(f"{'='*80}\n")
+        
+        # for i, sample in enumerate(samples[:5]):
+        #     if isinstance(sample, dict):
+        #         logger.warning(f"\n🔍 Sample {i+1}:")
+        #         logger.warning(f"Question: {sample.get('input', 'N/A')[:200]}...")
+        #         logger.warning(f"Prediction: {sample.get('prediction', 'N/A')}")
+        #         logger.warning(f"Reference: {sample.get('reference', 'N/A')}")
+        #         logger.warning(f"Correct: {sample.get('evaluation', {}).get('is_correct', False)}")
+        #         if 'options' in sample:
+        #             logger.warning(f"Options: {sample.get('options', [])}")
+        #         logger.warning("-" * 80)
+        
+        # logger.warning(f"\n{'='*80}\n")
+        #######################################################
+
         return {
             "model_name": model_info["name"],
-            "total_samples": metrics.get("total_samples", 0),
-            "correct_samples": metrics.get("correct_samples", 0),
-            "accuracy": metrics.get("accuracy", 0.0),
-            "average_score": metrics.get("average_score", 0.0),
+            "total_samples": total_samples,
+            "correct_samples": correct_samples,
+            "accuracy": metrics.get("accuracy", correct_samples / total_samples if total_samples > 0 else 0.0),
+            "average_score": metrics.get("average_score", correct_samples / total_samples if total_samples > 0 else 0.0),
             "execution_time": metrics.get("execution_time", 0.0),
             "metadata": {
                 "api_base": model_info.get("api_base"),

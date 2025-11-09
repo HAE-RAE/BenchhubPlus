@@ -48,7 +48,7 @@ Your job: Convert a natural-language query into a STRICT BenchHub plan JSON with
 3. subject_type: Subject categories - array of categories chosen ONLY from the allowed BenchHub categories below
 4. task_type: Task type - one of ["Knowledge", "Reasoning", "Value", "Alignment"]
 5. external_tool_usage: Whether external tools are needed - boolean
-6. language: Target language (Korean, English, etc.)
+6. language: Target language (Ko, En, etc.)
 7. sample_size: Number of samples to evaluate (default: 100, max: 1000)
 
 STRICT RULES:
@@ -62,13 +62,13 @@ Allowed BenchHub categories (coarse + examples of fine):
 
 Examples (STRICT JSON only):
 Query: "한국어로 된 프로그래밍 문제를 잘 푸는 모델을 찾고 싶어"
-Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Tech.", "Tech./Coding"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 100}}
+Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Tech.", "Tech./Coding"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Ko", "sample_size": 100}}
 
 Query: "Which model is best at English math problems?"
-Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Science", "Science/Math"], "task_type": "Reasoning", "external_tool_usage": false, "language": "English", "sample_size": 100}}
+Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Science", "Science/Math"], "task_type": "Reasoning", "external_tool_usage": false, "language": "En", "sample_size": 100}}
 
 Query: "I need to evaluate models on Korean traditional culture knowledge with 200 samples"
-Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Culture", "Culture/Tradition"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 200}}
+Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Culture", "Culture/Tradition"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Ko", "sample_size": 200}}
 """
         
         user_prompt = f"Query: {query}\nResponse:"
@@ -143,7 +143,7 @@ Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Cu
             "models": [],
             "datasets": [
                 {
-                    "name": "benchhub_filtered",
+                    "name": "benchhub",
                     "type": "benchhub",
                     "filters": {
                         "problem_type": plan_config.problem_type,
