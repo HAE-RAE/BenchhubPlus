@@ -6,6 +6,7 @@
 - Python 3.8 이상
 - Git
 - OpenAI API 키 또는 기타 LLM 제공자 API 키
+- **시드 데이터 파일**: `seeds/seed_data.parquet` ([데이터베이스 시딩](#데이터베이스-시딩) 섹션 참조)
 
 ## 빠른 시작
 

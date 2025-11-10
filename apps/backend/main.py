@@ -12,6 +12,7 @@ import uvicorn
 from ..core.config import get_settings
 from ..core.db import init_db
 from .routes import leaderboard, status, hret
+from .seeding import seed_database  # <-- [수정] 시딩 함수 임포트
 
 # Configure logging
 logging.basicConfig(
@@ -37,6 +38,12 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         logger.info("Database initialized successfully")
+        
+        # --- [수정] 이 부분 추가 ---
+        # DB 테이블 생성 후, 시딩 로직 실행
+        seed_database()
+        # --- 여기까지 ---
+        
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}")
         raise

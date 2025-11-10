@@ -65,6 +65,10 @@ cd BenchhubPlus
 cp .env.example .env
 # Edit .env with your settings
 
+# Prepare seed data (IMPORTANT)
+# Ensure seeds/seed_data.parquet exists before deployment
+# See "Database Seeding" section below for details
+
 # Deploy development environment
 ./scripts/deploy.sh development
 ```
@@ -673,6 +677,102 @@ services:
       - benchhub_network
     # Remove port exposure in production
 ```
+
+## 🗄️ Database Seeding
+
+BenchHub Plus uses an automated Parquet-based database seeding system that initializes the leaderboard with pre-aggregated benchmark data.
+
+### Seed Data Requirements
+
+**Critical**: Before deploying, ensure the `seeds/seed_data.parquet` file exists in your repository root. This file contains pre-aggregated evaluation results and is automatically loaded during container startup.
+
+#### Seed File Schema
+
+The Parquet file must contain the following columns:
+
+| Column | Type | Description | Example |
+|--------|------|-------------|---------|
+| `model_name` | string | Unique model identifier | "Qwen_Qwen2.5-72B-Instruct" |
+| `language` | string | Evaluation language | "Korean", "English" |
+| `subject_type` | string | Subject category | "HASS/Economics", "Tech./Coding" |
+| `task_type` | string | Task type | "Knowledge", "Reasoning" |
+| `score` | float64 | Performance score (0.0-1.0) | 0.852 |
+
+#### Docker Integration
+
+The `Dockerfile.backend` automatically copies the seed file into the container:
+
+```dockerfile
+# Create data directory
+RUN mkdir -p /app/data
+
+# Copy seed data file
+COPY seeds/seed_data.parquet /app/data/seed_data.parquet
+```
+
+#### Seeding Process
+
+1. **Startup Check**: When the backend container starts, it checks if the LeaderboardCache table is empty
+2. **Automatic Seeding**: If empty, it reads `seeds/seed_data.parquet` and populates the database
+3. **Idempotent Operation**: If data already exists, seeding is skipped to prevent duplicates
+4. **Logging**: All seeding operations are logged for monitoring
+
+#### Expected Log Messages
+
+**First deployment (empty database):**
+```
+INFO:apps.backend.seeding:Database is empty. Seeding initial data from 'data/seed_data.parquet'...
+INFO:apps.backend.seeding:Preparing to seed 4528 score records into LeaderboardCache...
+INFO:apps.backend.seeding:Database seeding complete. Added 4528 records.
+```
+
+**Subsequent deployments (existing data):**
+```
+INFO:apps.backend.seeding:LeaderboardCache already contains data. Skipping seeding.
+```
+
+#### Missing Seed File
+
+If the seed file is missing, the application will start normally but with an empty leaderboard:
+
+```
+WARNING:apps.backend.seeding:Seed file not found at 'data/seed_data.parquet'. Skipping.
+```
+
+#### Generating Seed Data
+
+To create your own seed data file:
+
+```python
+import pandas as pd
+
+# Aggregate your evaluation results
+data = []
+for result in your_evaluation_results:
+    data.append({
+        'model_name': result['model'],
+        'language': result['language'],
+        'subject_type': result['subject'],
+        'task_type': result['task'],
+        'score': result['aggregated_score']
+    })
+
+# Create Parquet file
+df = pd.DataFrame(data)
+df.to_parquet('seeds/seed_data.parquet', index=False)
+print(f"Created seed file with {len(df)} records")
+```
+
+### Troubleshooting Seeding Issues
+
+**Problem**: Container fails to start with seeding errors
+**Solution**: Check that `seeds/seed_data.parquet` exists and has the correct schema
+
+**Problem**: Duplicate data after restart
+**Solution**: This shouldn't happen due to idempotency checks. If it does, check the LeaderboardRepository.get_leaderboard() method
+
+**Problem**: Seeding takes too long
+**Solution**: Consider optimizing the seed file size or implementing bulk insert operations
 
 ---
 
