@@ -238,9 +238,10 @@ class ErrorResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     """Health check response."""
-    
+
     status: str = "healthy"
     timestamp: datetime = Field(default_factory=datetime.now)
     version: str = "2.0.0"
     database_status: str = "connected"
     redis_status: str = "connected"
+    celery_status: str = "connected"
