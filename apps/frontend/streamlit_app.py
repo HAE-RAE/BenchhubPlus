@@ -693,12 +693,16 @@ def main():
     render_header()
     
     # Navigation menu
+    nav_options = ["Evaluate", "Status", "Browse", "System"]
+    if "main_nav" not in st.session_state:
+        st.session_state.main_nav = nav_options[0]
+    default_index = nav_options.index(st.session_state.main_nav) if st.session_state.main_nav in nav_options else 0
     selected = option_menu(
         menu_title=None,
-        options=["Evaluate", "Status", "Browse", "System"],
+        options=nav_options,
         icons=["play-circle", "activity", "search", "gear"],
         menu_icon="cast",
-        default_index=0,
+        default_index=default_index,
         orientation="horizontal",
         styles={
             "container": {"padding": "0!important", "background-color": "#fafafa"},
@@ -710,7 +714,8 @@ def main():
                 "--hover-color": "#eee",
             },
             "nav-link-selected": {"background-color": "#667eea"},
-        }
+        },
+        key="main_nav"
     )
     
     # Render selected page
