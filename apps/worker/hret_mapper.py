@@ -109,6 +109,10 @@ class HRETResultMapper:
         
         # Extract metrics from HRET result
         metrics = self._extract_metrics_from_hret_result(hret_result)
+        filters = dataset_info.get("filters", {}) if isinstance(dataset_info, dict) else {}
+        benchhub_language = filters.get("language") or dataset_info.get("language")
+        benchhub_subject_type = filters.get("subject_type") or dataset_info.get("subject_type")
+        benchhub_task_type = filters.get("task_type") or dataset_info.get("task_type")
         
         # Create model result
         model_result = BenchhubModelResult(
@@ -123,6 +127,10 @@ class HRETResultMapper:
                 "model_type": model_info.get("model_type"),
                 "dataset_name": dataset_info.get("name"),
                 "dataset_split": dataset_info.get("split"),
+                "benchhub_filters": filters,
+                "benchhub_language": benchhub_language,
+                "benchhub_subject_type": benchhub_subject_type,
+                "benchhub_task_type": benchhub_task_type,
                 "hret_metrics": metrics,
                 "evaluation_timestamp": datetime.utcnow().isoformat()
             }
