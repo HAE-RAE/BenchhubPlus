@@ -11,6 +11,7 @@ from .celery_app import celery_app
 from .hret_runner import create_hret_runner
 from .hret_storage import HRETStorageManager
 from .hret_mapper import HRETResultMapper
+from ..core.credential_service import CredentialService
 from ..core.db import SessionLocal, ExperimentSample, EvaluationTask
 from ..backend.repositories.tasks_repo import TasksRepository
 from ..backend.services.orchestrator import EvaluationOrchestrator
@@ -35,7 +36,8 @@ def run_evaluation(self, task_id: str, plan_details: str) -> Dict[str, Any]:
         # Parse plan details
         plan_data = json.loads(plan_details)
         plan_yaml = plan_data.get("plan_yaml", "")
-        models = plan_data.get("models", [])
+        credential_service = CredentialService(db)
+        models = credential_service.hydrate_models(plan_data.get("models", []))
         
         if not plan_yaml or not models:
             raise ValueError("Invalid plan data: missing plan_yaml or models")

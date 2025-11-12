@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
+from ...core.credential_service import CredentialService, StoredCredential
 from ...core.db import LeaderboardCache
 
 from ...core.plan.planner import PlannerAgent, create_planner_agent
@@ -35,6 +36,7 @@ class EvaluationOrchestrator:
         self.leaderboard_repo = LeaderboardRepository(db)
         self.tasks_repo = TasksRepository(db)
         self.planner_agent: Optional[PlannerAgent] = None
+        self.credential_service = CredentialService(db)
         
         # Initialize planner agent if possible
         try:
@@ -54,16 +56,27 @@ class EvaluationOrchestrator:
         
         try:
             plan_metadata: Optional[Dict[str, Any]] = None
+            stored_credentials = self.credential_service.register_models(query.models)
+
+            secure_models = self._build_secure_models(query.models, stored_credentials)
 
             # Create evaluation plan using planner agent
             if self.planner_agent:
                 plan_metadata = self.planner_agent.create_evaluation_plan(
-                    query.query, query.models
+                    query.query, secure_models
+                )
+                plan_metadata = self._attach_credential_references(
+                    plan_metadata,
+                    stored_credentials
                 )
                 plan_details = json.dumps(plan_metadata)
             else:
                 # Fallback: create basic plan without LLM
-                plan_details = self._create_fallback_plan(query)
+                plan_details = self._create_fallback_plan(
+                    query,
+                    secure_models,
+                    stored_credentials
+                )
             
             # Check cache first
             cached_results = self._check_cache(query, plan_metadata if self.planner_agent else None)
@@ -243,13 +256,25 @@ class EvaluationOrchestrator:
             self.db.rollback()
             return None
     
-    def _create_fallback_plan(self, query: LeaderboardQuery) -> str:
+    def _create_fallback_plan(
+        self,
+        query: LeaderboardQuery,
+        secure_models: List[ModelInfo],
+        stored_credentials: List[StoredCredential]
+    ) -> str:
         """Create fallback plan when planner agent is not available."""
-        
+
         # Simple fallback plan
         fallback_plan = {
             "query": query.query,
-            "models": [model.dict() for model in query.models],
+            "models": [
+                {
+                    "name": model.name,
+                    "api_base": model.api_base,
+                    "model_type": model.model_type,
+                }
+                for model in secure_models
+            ],
             "config": {
                 "language": "English",  # Default
                 "subject_type": "General",  # Default
@@ -259,8 +284,62 @@ class EvaluationOrchestrator:
             "fallback": True,
             "created_at": datetime.utcnow().isoformat()
         }
-        
+
+        fallback_plan = self._attach_credential_references(
+            fallback_plan,
+            stored_credentials
+        )
+
         return json.dumps(fallback_plan)
+
+    def _build_secure_models(
+        self,
+        models: List[ModelInfo],
+        stored_credentials: List[StoredCredential]
+    ) -> List[ModelInfo]:
+        """Return sanitized models without raw API keys."""
+
+        secure_models: List[ModelInfo] = []
+        for model, stored in zip(models, stored_credentials):
+            secure_model = ModelInfo(
+                name=model.name,
+                api_base=model.api_base,
+                api_key=f"credential:{stored.id}",
+                model_type=model.model_type,
+            )
+            secure_models.append(secure_model)
+
+            # Scrub original model reference to avoid lingering secrets
+            model.api_key = "REDACTED"
+
+        return secure_models
+
+    def _attach_credential_references(
+        self,
+        plan_data: Dict[str, Any],
+        stored_credentials: List[StoredCredential]
+    ) -> Dict[str, Any]:
+        """Attach credential identifiers and remove sensitive fields."""
+
+        plan_models = plan_data.get("models", [])
+
+        if len(plan_models) != len(stored_credentials):
+            raise ValueError("Plan metadata models do not match stored credentials")
+
+        sanitized_models = []
+        for model_entry, credential in zip(plan_models, stored_credentials):
+            sanitized = {
+                key: value
+                for key, value in model_entry.items()
+                if key != "api_key"
+            }
+            sanitized["credential_id"] = credential.id
+            sanitized["credential_hash"] = credential.credential_hash
+            sanitized_models.append(sanitized)
+
+        plan_data["models"] = sanitized_models
+        plan_data.setdefault("metadata", {})["secured_credentials"] = True
+        return plan_data
     
     def get_leaderboard_by_criteria(
         self,

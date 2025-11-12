@@ -207,7 +207,7 @@ Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Cu
         plan_metadata = {
             "query": query,
             "config": plan_config.dict(),
-            "models": [model.dict() for model in models],
+            "models": [model.dict(exclude={"api_key"}) for model in models],
             "plan_yaml": plan_yaml,
             "estimated_duration": self._estimate_duration(plan_config, len(models)),
             "estimated_cost": self._estimate_cost(plan_config, models)

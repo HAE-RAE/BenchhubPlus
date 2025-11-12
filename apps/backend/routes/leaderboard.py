@@ -3,7 +3,7 @@
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -27,23 +27,45 @@ router = APIRouter(prefix="/api/v1/leaderboard", tags=["leaderboard"])
 @router.post("/generate", response_model=TaskResponse)
 async def generate_leaderboard(
     query: LeaderboardQuery,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """Generate leaderboard for given query and models."""
-    
-    # TODO: Add rate limiting based on IP or user
-    # client_ip = request.client.host
-    # if not rate_limiter.is_allowed(client_ip):
-    #     raise HTTPException(status_code=429, detail="Rate limit exceeded")
-    
+
+    client_ip = request.client.host if request.client else "anonymous"
+
+    remaining = None
+    limiter = getattr(request.app.state, "redis_rate_limiter", None)
+
+    if limiter:
+        allowed, remaining = await limiter.is_allowed(client_ip)
+    else:
+        allowed = rate_limiter.is_allowed(client_ip)
+        remaining = rate_limiter.get_remaining(client_ip)
+
+    if not allowed:
+        headers = {"Retry-After": "60"}
+        if remaining is not None:
+            headers["X-RateLimit-Remaining"] = str(max(0, remaining))
+        raise HTTPException(
+            status_code=429,
+            detail="Rate limit exceeded",
+            headers=headers,
+        )
+
     try:
         orchestrator = EvaluationOrchestrator(db)
         result = orchestrator.generate_leaderboard(query)
 
         logger.info(f"Generated leaderboard task: {result.task_id}")
+        response_headers = {}
+        if remaining is not None:
+            response_headers["X-RateLimit-Remaining"] = str(max(0, remaining - 1))
+
         return JSONResponse(
             status_code=status.HTTP_202_ACCEPTED,
-            content=result.dict()
+            content=result.dict(),
+            headers=response_headers or None,
         )
         
     except ValueError as e:

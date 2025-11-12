@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from apps.backend.services.orchestrator import EvaluationOrchestrator
+from apps.core.credential_service import StoredCredential
 from apps.core.schemas import LeaderboardQuery, ModelInfo, PlanConfig
 
 
@@ -31,7 +32,6 @@ def planner_plan():
             {
                 "name": "test-model",
                 "api_base": "https://api.example.com",
-                "api_key": "secret-key",
                 "model_type": "openai",
             }
         ],
@@ -56,6 +56,19 @@ def _build_orchestrator(planner_plan):
     planner_agent = MagicMock()
     planner_agent.create_evaluation_plan.return_value = planner_plan
 
+    stored_credentials = [
+        StoredCredential(
+            id=1,
+            credential_hash="hash-test",
+            model_name="test-model",
+            api_base="https://api.example.com",
+            model_type="openai",
+        )
+    ]
+
+    credential_service = MagicMock()
+    credential_service.register_models.return_value = stored_credentials
+
     patches = [
         patch(
             "apps.backend.services.orchestrator.TasksRepository",
@@ -68,6 +81,10 @@ def _build_orchestrator(planner_plan):
         patch(
             "apps.backend.services.orchestrator.create_planner_agent",
             return_value=planner_agent,
+        ),
+        patch(
+            "apps.backend.services.orchestrator.CredentialService",
+            return_value=credential_service,
         ),
     ]
 
@@ -100,9 +117,11 @@ def test_generate_leaderboard_dispatches_async(sample_query, planner_plan):
     assert dispatched_args[0] == response.task_id
     json.loads(dispatched_args[1])
 
-    planner_agent.create_evaluation_plan.assert_called_once_with(
-        sample_query.query, sample_query.models
-    )
+    planner_agent.create_evaluation_plan.assert_called_once()
+    called_query, called_models = planner_agent.create_evaluation_plan.call_args[0]
+    assert called_query == sample_query.query
+    assert all(model.api_key.startswith("credential:") for model in called_models)
+    assert all(model.api_key == "REDACTED" for model in sample_query.models)
     tasks_repo.update_task_status.assert_not_called()
 
 

@@ -1,7 +1,7 @@
 """Configuration management for BenchHub Plus."""
 
 import os
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -39,8 +39,7 @@ class Settings(BaseSettings):
     frontend_port: int = Field(default=8501, description="Frontend port")
     
     # LLM Configuration (for Planner Agent)
-    openai_api_key: Optional[str] = Field(
-        default=None, 
+    openai_api_key: str = Field(
         description="OpenAI API key for planner agent"
     )
     planner_model: str = Field(
@@ -54,7 +53,6 @@ class Settings(BaseSettings):
     
     # Security
     secret_key: str = Field(
-        default="your_secret_key_here_change_in_production",
         description="Secret key for JWT tokens"
     )
     algorithm: str = Field(default="HS256", description="JWT algorithm")
@@ -107,8 +105,13 @@ class Settings(BaseSettings):
         description="Rate limit per minute"
     )
     rate_limit_burst: int = Field(
-        default=10, 
+        default=10,
         description="Rate limit burst"
+    )
+
+    cors_allowed_origins: List[str] = Field(
+        default_factory=list,
+        description="Comma-separated list of allowed CORS origins"
     )
     
     @property
