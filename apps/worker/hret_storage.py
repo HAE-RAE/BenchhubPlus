@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from core.db import SessionLocal, ExperimentSample, LeaderboardCache, EvaluationTask
 from worker.hret_mapper import BenchhubSample, BenchhubModelResult, HRETResultMapper
+from core.categories import BENCHHUB_COARSE_CATEGORIES, BENCHHUB_FINE_CATEGORIES
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,52 @@ class HRETStorageManager:
     def __init__(self):
         """Initialize HRET storage manager."""
         self.mapper = HRETResultMapper()
+        self.valid_subject_categories = self._build_valid_subject_categories()
+    
+    def _build_valid_subject_categories(self) -> List[str]:
+        """Flatten BenchHub category definitions into a unique ordered list."""
+        categories = list(BENCHHUB_COARSE_CATEGORIES)
+        for fine_list in BENCHHUB_FINE_CATEGORIES.values():
+            categories.extend(fine_list)
+        
+        unique: List[str] = []
+        for category in categories:
+            if category not in unique:
+                unique.append(category)
+        return unique
+    
+    def _normalize_subject_types(self, subject_data: Any) -> List[str]:
+        """Normalize subject metadata into valid BenchHub categories."""
+        if isinstance(subject_data, str):
+            candidates = [subject_data]
+        elif isinstance(subject_data, list):
+            candidates = [item for item in subject_data if isinstance(item, str)]
+        else:
+            candidates = []
+        
+        normalized: List[str] = []
+        for candidate in candidates:
+            cleaned = candidate.strip()
+            if cleaned and cleaned in self.valid_subject_categories and cleaned not in normalized:
+                normalized.append(cleaned)
+        return normalized
+    
+    def _map_language_label(self, language_value: str) -> str:
+        """Normalize language identifiers into human-readable labels."""
+        lang_map = {
+            "ko": "Korean",
+            "korean": "Korean",
+            "ko-kr": "Korean",
+            "en": "English",
+            "english": "English",
+            "en-us": "English",
+            "ja": "Japanese",
+            "japanese": "Japanese",
+            "zh": "Chinese",
+            "chinese": "Chinese",
+        }
+        lowered = language_value.lower()
+        return lang_map.get(lowered, language_value)
     
     def store_evaluation_results(
         self,
@@ -182,10 +229,16 @@ class HRETStorageManager:
     def _determine_language(self, dataset_name: str, metadata: Dict[str, Any]) -> str:
         """Determine language from dataset name and metadata."""
         
+        benchhub_language = metadata.get("benchhub_language")
+        if benchhub_language:
+            return self._map_language_label(str(benchhub_language))
+        
         # Check metadata first
         if "target_lang" in metadata:
-            lang_map = {"ko": "Korean", "en": "English", "zh": "Chinese", "ja": "Japanese"}
-            return lang_map.get(metadata["target_lang"], metadata["target_lang"])
+            return self._map_language_label(str(metadata["target_lang"]))
+        
+        if "language" in metadata:
+            return self._map_language_label(str(metadata["language"]))
         
         # Infer from dataset name
         dataset_name = dataset_name.lower()
@@ -199,68 +252,105 @@ class HRETStorageManager:
     def _determine_subject_types(self, dataset_name: str, metadata: Dict[str, Any]) -> List[str]:
         """Determine subject types from dataset name and metadata."""
         
-        subjects = []
-        dataset_name = dataset_name.lower()
+        # Prefer metadata provided by BenchHub plan
+        metadata_subjects = metadata.get("benchhub_subject_type") or metadata.get("subject_type")
+        normalized = self._normalize_subject_types(metadata_subjects)
+        if normalized:
+            return normalized
         
-        # Map dataset names to subjects
+        subjects: List[str] = []
+        dataset_name_lower = dataset_name.lower()
+        
+        # Map dataset names to BenchHub-compliant categories (coarse + fine)
         subject_mapping = {
-            "math": ["Mathematics"],
+            "math": ["Science", "Science/Math"],
             "science": ["Science"],
-            "history": ["History"],
-            "literature": ["Literature"],
-            "law": ["Law"],
-            "medicine": ["Medicine"],
-            "economics": ["Economics"],
-            "geography": ["Geography"],
-            "korean": ["Korean Language"],
-            "english": ["English Language"],
-            "computer": ["Computer Science"],
-            "philosophy": ["Philosophy"],
-            "psychology": ["Psychology"],
-            "sociology": ["Sociology"]
+            "history": ["HASS", "HASS/History"],
+            "literature": ["HASS", "HASS/Literature"],
+            "law": ["HASS", "HASS/Law"],
+            "medicine": ["Science", "Science/Life Science"],
+            "economics": ["HASS", "HASS/Economics"],
+            "geography": ["HASS", "HASS/Geography"],
+            "korean": ["HASS", "HASS/Language"],
+            "english": ["HASS", "HASS/Language"],
+            "computer": ["Tech.", "Tech./Coding"],
+            "tech": ["Tech."],
+            "technology": ["Tech."],
+            "philosophy": ["HASS", "HASS/Philosophy"],
+            "psychology": ["HASS", "HASS/Psychology"],
+            "sociology": ["HASS", "HASS/social&humanity/sociology"],
+            "biology": ["Science", "Science/Biology"],
+            "chemistry": ["Science", "Science/Chemistry"],
+            "physics": ["Science", "Science/Physics"],
+            "astronomy": ["Science", "Science/Astronomy"],
+            "culture": ["Culture"],
+            "art": ["Art & Sports"],
+            "sports": ["Art & Sports", "Art & Sports/Sports"],
         }
         
-        for key, subject_list in subject_mapping.items():
-            if key in dataset_name:
-                subjects.extend(subject_list)
+        for key, mapped_subjects in subject_mapping.items():
+            if key in dataset_name_lower:
+                for category in mapped_subjects:
+                    if category in self.valid_subject_categories and category not in subjects:
+                        subjects.append(category)
         
-        # If no specific subjects found, use General
+        # If no specific subjects found, fall back to a safe coarse category
         if not subjects:
-            subjects = ["General"]
+            subjects = ["HASS"]
         
         return subjects
     
     def _determine_task_types(self, dataset_name: str, metadata: Dict[str, Any]) -> List[str]:
         """Determine task types from dataset name and metadata."""
         
-        tasks = []
-        dataset_name = dataset_name.lower()
+        dataset_name_lower = dataset_name.lower()
         
-        # Map dataset names to task types
+        # Prefer metadata (BenchHub tasks are Knowledge/Reasoning/Value/Alignment)
+        metadata_task = metadata.get("benchhub_task_type") or metadata.get("task_type")
+        if isinstance(metadata_task, list):
+            metadata_tasks = [task for task in metadata_task if isinstance(task, str) and task]
+        elif isinstance(metadata_task, str):
+            metadata_tasks = [metadata_task]
+        else:
+            metadata_tasks = []
+        
+        if metadata_tasks:
+            deduped: List[str] = []
+            for task in metadata_tasks:
+                if task not in deduped:
+                    deduped.append(task)
+            return deduped
+        
+        tasks: List[str] = []
+        # Map dataset names to BenchHub task types
         task_mapping = {
-            "qa": ["QA"],
-            "question": ["QA"],
+            "qa": ["Knowledge"],
+            "question": ["Knowledge"],
             "reasoning": ["Reasoning"],
-            "math": ["Math", "Reasoning"],
-            "reading": ["Reading Comprehension"],
-            "comprehension": ["Reading Comprehension"],
+            "math": ["Reasoning"],
+            "reading": ["Knowledge"],
+            "comprehension": ["Knowledge"],
             "knowledge": ["Knowledge"],
-            "generation": ["Generation"],
-            "classification": ["Classification"],
-            "multiple_choice": ["Multiple Choice"],
-            "short_answer": ["Short Answer"],
-            "long_answer": ["Long Answer"]
+            "generation": ["Knowledge"],
+            "classification": ["Knowledge"],
+            "multiple_choice": ["Knowledge"],
+            "short_answer": ["Knowledge"],
+            "long_answer": ["Knowledge"],
+            "alignment": ["Alignment"],
+            "value": ["Value"]
         }
         
         for key, task_list in task_mapping.items():
-            if key in dataset_name:
-                tasks.extend(task_list)
+            if key in dataset_name_lower:
+                for task in task_list:
+                    if task not in tasks:
+                        tasks.append(task)
         
-        # If no specific tasks found, use QA as default
+        # If no specific tasks found, default to Knowledge
         if not tasks:
-            tasks = ["QA"]
+            tasks = ["Knowledge"]
         
-        return list(set(tasks))  # Remove duplicates
+        return tasks
     
     def _update_evaluation_task(
         self, 

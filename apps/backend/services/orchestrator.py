@@ -169,6 +169,22 @@ class EvaluationOrchestrator:
             model.name = sanitize_model_name(model.name)
             
             logger.info(f"Validated model: {model.name} with API key: {mask_api_key(model.api_key)}")
+
+    def _normalize_subject_categories(self, raw_subjects: Any) -> List[str]:
+        """Normalize subject_type config into a de-duplicated list."""
+        if isinstance(raw_subjects, str):
+            subjects = [raw_subjects]
+        elif isinstance(raw_subjects, list):
+            subjects = [item for item in raw_subjects if isinstance(item, str)]
+        else:
+            subjects = []
+
+        normalized: List[str] = []
+        for subject in subjects:
+            cleaned = subject.strip()
+            if cleaned and cleaned not in normalized:
+                normalized.append(cleaned)
+        return normalized
     
     def _check_cache(
         self, 
@@ -183,12 +199,9 @@ class EvaluationOrchestrator:
         try:
             config = PlanConfig(**plan_metadata["config"])
             
-            # Normalize subject_type from list to string (DB stores as string)
-            subject_key = (
-                "/".join(config.subject_type)
-                if isinstance(config.subject_type, list)
-                else str(config.subject_type)
-            )
+            # Normalize subject categories and pick the most specific (last) for cache lookups
+            subject_categories = self._normalize_subject_categories(config.subject_type)
+            subject_key = subject_categories[-1] if subject_categories else "General"
             
             # Check cache for each model
             cached_entries = []
@@ -394,11 +407,9 @@ class EvaluationOrchestrator:
             task_type = config.get("task_type", "Unknown")
 
             # Normalize subject_type from plan (can be list)
-            subject_key = (
-                "/".join(subject_type_raw)
-                if isinstance(subject_type_raw, list)
-                else str(subject_type_raw)
-            )
+            subject_categories = self._normalize_subject_categories(subject_type_raw)
+            if not subject_categories:
+                subject_categories = ["General"]
             
             # Update cache for each model result
             for result in evaluation_results:
@@ -406,13 +417,14 @@ class EvaluationOrchestrator:
                 score = result.get("average_score", 0.0)
                 
                 if model_name and isinstance(score, (int, float)):
-                    self.leaderboard_repo.upsert_entry(
-                        model_name=model_name,
-                        language=language,
-                        subject_type=subject_key,
-                        task_type=task_type,
-                        score=float(score)
-                    )
+                    for subject in subject_categories:
+                        self.leaderboard_repo.upsert_entry(
+                            model_name=model_name,
+                            language=language,
+                            subject_type=subject,
+                            task_type=task_type,
+                            score=float(score)
+                        )
                     
                     logger.info(f"Updated cache for {model_name}: {score}")
             
