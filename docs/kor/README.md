@@ -1,6 +1,6 @@
 # BenchHub Plus 문서
 
-BenchHub Plus는 자연어 질의를 맞춤형 모델 랭킹으로 변환하는 대화형 리더보드 시스템입니다. FastAPI 백엔드, Streamlit 프런트엔드, Celery 워커, HRET 통합으로 구성되어 동적인 LLM 평가를 손쉽게 수행할 수 있습니다.
+BenchHub Plus는 자연어 질의를 맞춤형 모델 랭킹으로 변환하는 대화형 리더보드 시스템입니다. FastAPI 백엔드, 현대적인 Reflex 프런트엔드, Celery 워커, HRET 통합으로 구성되어 동적인 LLM 평가를 손쉽게 수행할 수 있습니다.
 
 ## 📚 문서 색인
 
@@ -13,6 +13,7 @@ BenchHub Plus는 자연어 질의를 맞춤형 모델 랭킹으로 변환하는 
 ### 사용자 가이드
 - [사용자 매뉴얼](user-manual.md) - 전체 기능 설명
 - [API 레퍼런스](api-reference.md) - REST API 문서
+- [Reflex 마이그레이션 가이드](reflex-migration.md) - **새로운 Reflex 프런트엔드 사용법**
 - [프런트엔드 가이드](frontend-guide.md) - Streamlit 인터페이스 사용법 (TODO: 추가 예정)
 
 ### 개발
@@ -59,7 +60,7 @@ BenchHub Plus는 다음과 같은 흐름으로 동작합니다.
 ## 🛠️ 기술 스택
 
 - **백엔드**: FastAPI, SQLAlchemy, PostgreSQL
-- **프런트엔드**: Streamlit, Plotly
+- **프런트엔드**: Reflex (권장), Streamlit (레거시 지원), Plotly
 - **작업 큐**: Celery, Redis
 - **평가**: HRET Toolkit
 - **배포**: Docker, Docker Compose
