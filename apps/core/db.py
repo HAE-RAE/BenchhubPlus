@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     create_engine,
     CheckConstraint,
 )
@@ -103,9 +104,9 @@ class EvaluationTask(Base):
 
 class ExperimentSample(Base):
     """Experiment samples table for storing individual evaluation results."""
-    
+
     __tablename__ = "experiment_samples"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     prompt = Column(Text, nullable=False)
     answer = Column(Text, nullable=False)
@@ -126,6 +127,39 @@ class ExperimentSample(Base):
         return (
             f"<ExperimentSample(id={self.id}, dataset_name='{self.dataset_name}', "
             f"skill_label='{self.skill_label}', correctness={self.correctness})>"
+        )
+
+
+class ModelCredential(Base):
+    """Securely stored model API credentials."""
+
+    __tablename__ = "model_credentials"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    model_name = Column(String(255), nullable=False)
+    model_type = Column(String(100), nullable=True)
+    api_base = Column(String(255), nullable=False)
+    credential_hash = Column(String(128), nullable=False, unique=True)
+    encrypted_api_key = Column(Text, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("credential_hash", name="uq_model_credentials_hash"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            "<ModelCredential(id={id}, model_name='{name}', api_base='{base}')>".format(
+                id=self.id,
+                name=self.model_name,
+                base=self.api_base,
+            )
         )
 
 

@@ -99,6 +99,8 @@ Create and configure `.env` file:
 ```env
 # Required Settings
 OPENAI_API_KEY=your_openai_api_key_here
+SECRET_KEY=generate_a_minimum_32_byte_secret
+CORS_ALLOWED_ORIGINS=https://your-frontend.example.com
 POSTGRES_PASSWORD=secure_database_password
 
 # Optional Settings
@@ -112,6 +114,15 @@ REDIS_URL=redis://redis:6379/0
 DOMAIN=your-domain.com
 SSL_EMAIL=your-email@domain.com
 ```
+
+### Secret Rotation
+
+BenchHub Plus never ships with default secrets. Rotate credentials routinely:
+
+1. **Generate new secrets**: create a fresh `SECRET_KEY` and replace any external API keys in a secure secret manager.
+2. **Update environment**: deploy the new values to the runtime environment (Kubernetes secret, Docker Compose `.env`, etc.).
+3. **Restart services**: restart the backend, workers, and any scheduled jobs so they load the updated secrets. Workers use encrypted credentials and will pick up the new keys immediately after restart.
+4. **Verify**: call `GET /api/v1/health` to ensure the backend reports `healthy` and Celery workers respond with the new configuration.
 
 ### Docker Compose Files
 
