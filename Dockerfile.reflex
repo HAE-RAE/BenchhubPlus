@@ -1,0 +1,36 @@
+FROM python:3.11-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY apps/reflex_frontend/requirements.txt ./requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY apps/reflex_frontend/ ./
+
+# Install Node.js dependencies and build frontend
+RUN reflex init --loglevel debug
+RUN reflex export --frontend-only --no-zip
+
+# Expose ports
+EXPOSE 3000 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000 || exit 1
+
+# Run Reflex
+CMD ["reflex", "run", "--env", "prod", "--backend-host", "0.0.0.0", "--frontend-host", "0.0.0.0"]
