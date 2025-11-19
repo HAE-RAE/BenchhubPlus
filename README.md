@@ -278,6 +278,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Eunsu Kim — [rladmstn1714](https://github.com/rladmstn1714)
 - Joonyong Park — [JoonYong-Park](https://github.com/JoonYong-Park)
 - Hyunwoo Oh - [hw-oh](https://github.com/hw-oh)
+- Hyungjin Jeon - [gudwls47](https://github.com/gudwls47)
 
 ## 📞 Support
 
