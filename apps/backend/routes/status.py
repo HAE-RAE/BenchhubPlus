@@ -3,7 +3,7 @@
 import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api/v1", tags=["status"])
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check(request: Request, db: Session = Depends(get_db)):
+async def health_check(request: Request, response: Response, db: Session = Depends(get_db)):
     """Health check endpoint."""
 
     try:
@@ -60,6 +60,7 @@ async def health_check(request: Request, db: Session = Depends(get_db)):
     overall_status = "healthy" if all(status == "connected" for status in component_statuses) else "unhealthy"
 
     response_status = status.HTTP_200_OK if overall_status == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
+    response.status_code = response_status
 
     health_payload = HealthResponse(
         status=overall_status,
@@ -68,7 +69,7 @@ async def health_check(request: Request, db: Session = Depends(get_db)):
         celery_status=celery_status
     )
 
-    return JSONResponse(status_code=response_status, content=health_payload.dict())
+    return health_payload
 
 
 @router.get("/tasks/{task_id}", response_model=Dict[str, Any])

@@ -44,6 +44,7 @@ services:
     container_name: benchhub_backend
     environment:
       - DATABASE_URL=postgresql://benchhub:${POSTGRES_PASSWORD:-benchhub_password}@postgres:5432/benchhub_plus
+      - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - OPENAI_API_KEY=${OPENAI_API_KEY}
