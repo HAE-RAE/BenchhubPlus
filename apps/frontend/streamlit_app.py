@@ -82,7 +82,7 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
             st.error(f"Unsupported HTTP method: {method}")
             return None
         
-        if response.status_code == 200:
+        if response.status_code in (200,202):
             return response.json()
         else:
             st.error(f"API Error {response.status_code}: {response.text}")
@@ -712,8 +712,12 @@ def main():
                 "text-align": "center",
                 "margin": "0px",
                 "--hover-color": "#eee",
+                "color": "black",
             },
-            "nav-link-selected": {"background-color": "#667eea"},
+            "nav-link-selected": {
+                "background-color": "#667eea",
+                "color": "white",
+                },
         },
         key="main_nav"
     )
