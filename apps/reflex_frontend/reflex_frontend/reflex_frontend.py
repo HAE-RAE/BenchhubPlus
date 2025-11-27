@@ -75,6 +75,32 @@ class AppState(rx.State):
     subject_filter: str = "All"
     task_type_filter: str = "All"
     max_results: int = 100
+
+    # Manager dashboard state (front-end only snapshot)
+    manager_snapshot_loaded: bool = False
+    manager_last_updated: Optional[str] = None
+    manager_health: Dict[str, Any] = {
+        "database": "unknown",
+        "redis": "unknown",
+        "planner": "unknown",
+        "hret": "unknown",
+    }
+    manager_capacity: Dict[str, Any] = {
+        "pending": 0,
+        "running": 0,
+        "success": 0,
+        "failure": 0,
+        "cache_entries": 0,
+    }
+    manager_tasks: List[Dict[str, Any]] = []
+    manager_leaderboard: List[Dict[str, Any]] = []
+    manager_new_entry: Dict[str, Any] = {
+        "model": "",
+        "language": "",
+        "subject": "",
+        "task_type": "",
+        "score": "",
+    }
     
     def set_page(self, page: str):
         """Set the current page."""
@@ -99,6 +125,150 @@ class AppState(rx.State):
         except ValueError:
             self.max_results = 100
     
+
+    # ----- Manager dashboard helpers -----
+    def refresh_manager_snapshot(self):
+        """Populate mock manager data until backend wiring is ready."""
+        snapshot_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.manager_health = {
+            "database": "connected",
+            "redis": "connected",
+            "planner": "healthy",
+            "hret": "available",
+        }
+        self.manager_capacity = {
+            "pending": 3,
+            "running": 1,
+            "success": 14,
+            "failure": 2,
+            "cache_entries": 42,
+        }
+        self.manager_tasks = [
+            {
+                "id": "task_local_001",
+                "status": "PENDING",
+                "query": "Compare GPT-4 vs Claude-3 on KR history",
+                "models_label": "Models: gpt-4, claude-3",
+                "submitted_at": "2024-11-17 11:45",
+                "duration": "-",
+                "duration_label": "Duration: -",
+            },
+            {
+                "id": "task_local_002",
+                "status": "STARTED",
+                "query": "Evaluate codellama on bug fixing",
+                "models_label": "Models: codellama, gpt-4",
+                "submitted_at": "2024-11-17 11:10",
+                "duration": "12m",
+                "duration_label": "Duration: 12m",
+            },
+            {
+                "id": "task_local_003",
+                "status": "FAILURE",
+                "query": "Massive multi-model request",
+                "models_label": "Models: model_a, model_b, model_c, model_d",
+                "submitted_at": "2024-11-17 10:55",
+                "duration": "2m",
+                "duration_label": "Duration: 2m",
+            },
+        ]
+        self.manager_leaderboard = [
+            {
+                "id": "lb_1",
+                "rank": 1,
+                "model": "GPT-4",
+                "language": "Korean",
+                "subject": "Math",
+                "task_type": "Reasoning",
+                "score": 91.4,
+            },
+            {
+                "id": "lb_2",
+                "rank": 2,
+                "model": "Claude-3",
+                "language": "Korean",
+                "subject": "Math",
+                "task_type": "Reasoning",
+                "score": 89.1,
+            },
+            {
+                "id": "lb_3",
+                "rank": 3,
+                "model": "Llama-2",
+                "language": "English",
+                "subject": "Coding",
+                "task_type": "Bug Fixing",
+                "score": 74.8,
+            },
+        ]
+        self.manager_last_updated = snapshot_time
+        self.manager_snapshot_loaded = True
+
+    def update_manager_task_status(self, task_id: str, status: str):
+        """Update a task inside the mock queue."""
+        updated_tasks = []
+        for task in self.manager_tasks:
+            if task["id"] == task_id:
+                updated = task.copy()
+                updated["status"] = status
+                updated_tasks.append(updated)
+            else:
+                updated_tasks.append(task)
+        self.manager_tasks = updated_tasks
+
+    def remove_manager_task(self, task_id: str):
+        """Delete a task from the mock queue."""
+        self.manager_tasks = [task for task in self.manager_tasks if task["id"] != task_id]
+
+    def update_manager_new_entry(self, field: str, value: str):
+        """Update leaderboard entry draft state."""
+        updated = self.manager_new_entry.copy()
+        updated[field] = value
+        self.manager_new_entry = updated
+
+    def _recalculate_leaderboard(self, entries: List[Dict[str, Any]]):
+        """Sort entries and recalculate ranks."""
+        sorted_entries = sorted(entries, key=lambda item: item["score"], reverse=True)
+        for idx, entry in enumerate(sorted_entries, start=1):
+            entry["rank"] = idx
+        self.manager_leaderboard = sorted_entries
+
+    def add_manager_leaderboard_entry(self):
+        """Add an entry to the mock leaderboard."""
+        payload = self.manager_new_entry
+        if not payload["model"] or not payload["score"]:
+            return rx.toast.error("Model name and score are required")
+        try:
+            score_value = float(payload["score"])
+        except ValueError:
+            return rx.toast.error("Score must be numeric")
+        new_entry = {
+            "id": f"lb_custom_{len(self.manager_leaderboard) + 1}",
+            "rank": 0,
+            "model": payload["model"],
+            "language": payload.get("language", ""),
+            "subject": payload.get("subject", ""),
+            "task_type": payload.get("task_type", ""),
+            "score": score_value,
+        }
+        self._recalculate_leaderboard(self.manager_leaderboard + [new_entry])
+        self.manager_new_entry = {
+            "model": "",
+            "language": "",
+            "subject": "",
+            "task_type": "",
+            "score": "",
+        }
+        return rx.toast.success("Entry saved locally")
+
+    def remove_manager_leaderboard_entry(self, entry_id: str):
+        """Remove an entry by ID."""
+        entries = [entry for entry in self.manager_leaderboard if entry["id"] != entry_id]
+        if len(entries) == len(self.manager_leaderboard):
+            return
+        self._recalculate_leaderboard(entries)
+        return rx.toast.info("Entry removed")
+
     def add_model(self):
         """Add a new model configuration."""
         self.models.append({
@@ -274,6 +444,12 @@ def navigation() -> rx.Component:
             "🏅 Leaderboard",
             on_click=lambda: AppState.set_page("leaderboard"),
             variant=rx.cond(AppState.current_page == "leaderboard", "solid", "outline"),
+            color_scheme="blue",
+        ),
+        rx.button(
+            "🛠 Manager",
+            on_click=lambda: AppState.set_page("manager"),
+            variant=rx.cond(AppState.current_page == "manager", "solid", "outline"),
             color_scheme="blue",
         ),
         spacing="4",
@@ -773,6 +949,328 @@ def leaderboard_page() -> rx.Component:
     )
 
 
+
+def manager_status_card(title: str, value: rx.Var[str], description: str = "") -> rx.Component:
+    """Render subsystem status badges."""
+    return rx.card(
+        rx.vstack(
+            rx.text(title, size="2", color="gray"),
+            rx.badge(value, variant="solid", color_scheme="blue"),
+            rx.cond(
+                description != "",
+                rx.text(description, size="1", color="gray"),
+                rx.fragment()
+            ),
+            spacing="1",
+            align="start",
+        ),
+        width="100%",
+    )
+
+
+def manager_capacity_card(title: str, value: rx.Var[Any], color: str) -> rx.Component:
+    """Render KPI cards."""
+    return rx.card(
+        rx.vstack(
+            rx.text(title, size="2", color="gray"),
+            rx.text(value, size="6", weight="bold", color=color),
+            spacing="1",
+            align="start",
+        ),
+        width="100%",
+    )
+
+
+def manager_task_card(task: rx.Var[dict]) -> rx.Component:
+    """Single task row with actions."""
+    return rx.card(
+        rx.vstack(
+            rx.hstack(
+                rx.badge(
+                    task["status"],
+                    color_scheme=rx.cond(
+                        task["status"] == "SUCCESS",
+                        "green",
+                        rx.cond(
+                            task["status"] == "FAILURE",
+                            "red",
+                            rx.cond(task["status"] == "STARTED", "blue", "orange")
+                        )
+                    ),
+                    variant="solid",
+                ),
+                rx.spacer(),
+                rx.text(task["submitted_at"], size="2", color="gray"),
+                width="100%",
+                align="center",
+            ),
+            rx.text(task["query"], weight="bold", size="3"),
+            rx.text(task["models_label"], size="2", color="gray"),
+            rx.text(task["duration_label"], size="2", color="gray"),
+            rx.hstack(
+                rx.button(
+                    "Mark Success",
+                    size="1",
+                    variant="soft",
+                    color_scheme="green",
+                    on_click=lambda: AppState.update_manager_task_status(task["id"], "SUCCESS"),
+                ),
+                rx.button(
+                    "Mark Failure",
+                    size="1",
+                    variant="soft",
+                    color_scheme="red",
+                    on_click=lambda: AppState.update_manager_task_status(task["id"], "FAILURE"),
+                ),
+                rx.button(
+                    "Remove",
+                    size="1",
+                    variant="outline",
+                    color_scheme="gray",
+                    on_click=lambda: AppState.remove_manager_task(task["id"]),
+                ),
+                spacing="2",
+            ),
+            spacing="2",
+            align="start",
+            width="100%",
+        ),
+        width="100%",
+    )
+
+
+def manager_health_section() -> rx.Component:
+    """Health snapshot."""
+    return rx.card(
+        rx.vstack(
+            rx.hstack(
+                rx.heading("🛡 Health & Capacity Snapshot", size="5"),
+                rx.spacer(),
+                rx.button(
+                    "Refresh Snapshot",
+                    variant="outline",
+                    size="2",
+                    on_click=AppState.refresh_manager_snapshot,
+                ),
+                width="100%",
+                align="center",
+            ),
+            rx.cond(
+                AppState.manager_last_updated,
+                rx.text("Last updated: ", AppState.manager_last_updated, size="2", color="gray"),
+                rx.text("Click refresh to load sample data", size="2", color="gray"),
+            ),
+            rx.cond(
+                AppState.manager_snapshot_loaded,
+                rx.vstack(
+                    rx.grid(
+                        manager_status_card("Database", AppState.manager_health["database"], "FastAPI ↔ PostgreSQL"),
+                        manager_status_card("Redis", AppState.manager_health["redis"], "Celery broker/cache"),
+                        manager_status_card("Planner", AppState.manager_health["planner"], "LLM plan agent"),
+                        manager_status_card("HRET", AppState.manager_health["hret"], "Toolkit availability"),
+                        columns="4",
+                        spacing="4",
+                        width="100%",
+                    ),
+                    rx.grid(
+                        manager_capacity_card("Pending", AppState.manager_capacity["pending"], "orange"),
+                        manager_capacity_card("Running", AppState.manager_capacity["running"], "blue"),
+                        manager_capacity_card("Success", AppState.manager_capacity["success"], "green"),
+                        manager_capacity_card("Failure", AppState.manager_capacity["failure"], "red"),
+                        manager_capacity_card("Cache Entries", AppState.manager_capacity["cache_entries"], "purple"),
+                        columns="5",
+                        spacing="4",
+                        width="100%",
+                    ),
+                    spacing="4",
+                    width="100%",
+                ),
+                rx.center(
+                    rx.text("No snapshot loaded yet.", color="gray"),
+                    padding="2rem",
+                ),
+            ),
+            spacing="3",
+            width="100%",
+        ),
+        width="100%",
+    )
+
+
+def manager_tasks_section() -> rx.Component:
+    """Task moderation."""
+    return rx.card(
+        rx.vstack(
+            rx.heading("📋 Task Pipeline Control", size="5"),
+            rx.text("Mark, remove, or inspect suspicious jobs.", size="2", color="gray"),
+            rx.cond(
+                AppState.manager_tasks.length() > 0,
+                rx.vstack(
+                    rx.foreach(
+                        AppState.manager_tasks,
+                        manager_task_card,
+                    ),
+                    spacing="2",
+                    width="100%",
+                ),
+                rx.center(
+                    rx.text("No task data. Run the snapshot refresh.", color="gray"),
+                    padding="2rem",
+                ),
+            ),
+            spacing="3",
+            width="100%",
+        ),
+        width="100%",
+    )
+
+
+def manager_leaderboard_table_row(entry: rx.Var[dict]) -> rx.Component:
+    """Leaderboard row with actions."""
+    return rx.table.row(
+        rx.table.cell(entry["rank"]),
+        rx.table.cell(entry["model"]),
+        rx.table.cell(entry["language"]),
+        rx.table.cell(entry["subject"]),
+        rx.table.cell(entry["task_type"]),
+        rx.table.cell(entry["score"]),
+        rx.table.cell(
+            rx.button(
+                "Delete",
+                size="1",
+                variant="outline",
+                color_scheme="red",
+                on_click=lambda: AppState.remove_manager_leaderboard_entry(entry["id"]),
+            )
+        ),
+    )
+
+
+def manager_leaderboard_form() -> rx.Component:
+    """Form for manual leaderboard edits."""
+    return rx.card(
+        rx.vstack(
+            rx.heading("Add Leaderboard Entry", size="4"),
+            rx.grid(
+                rx.vstack(
+                    rx.text("Model", weight="bold", size="2"),
+                    rx.input(
+                        placeholder="Model name",
+                        value=AppState.manager_new_entry["model"],
+                        on_change=lambda value: AppState.update_manager_new_entry("model", value),
+                    ),
+                    align="start",
+                ),
+                rx.vstack(
+                    rx.text("Language", weight="bold", size="2"),
+                    rx.input(
+                        placeholder="e.g. Korean",
+                        value=AppState.manager_new_entry["language"],
+                        on_change=lambda value: AppState.update_manager_new_entry("language", value),
+                    ),
+                    align="start",
+                ),
+                rx.vstack(
+                    rx.text("Subject", weight="bold", size="2"),
+                    rx.input(
+                        placeholder="e.g. Math",
+                        value=AppState.manager_new_entry["subject"],
+                        on_change=lambda value: AppState.update_manager_new_entry("subject", value),
+                    ),
+                    align="start",
+                ),
+                rx.vstack(
+                    rx.text("Task Type", weight="bold", size="2"),
+                    rx.input(
+                        placeholder="e.g. Reasoning",
+                        value=AppState.manager_new_entry["task_type"],
+                        on_change=lambda value: AppState.update_manager_new_entry("task_type", value),
+                    ),
+                    align="start",
+                ),
+                rx.vstack(
+                    rx.text("Score", weight="bold", size="2"),
+                    rx.input(
+                        placeholder="0 - 100",
+                        value=AppState.manager_new_entry["score"],
+                        on_change=lambda value: AppState.update_manager_new_entry("score", value),
+                        type="number",
+                        step="0.1",
+                    ),
+                    align="start",
+                ),
+                columns="5",
+                spacing="4",
+                width="100%",
+            ),
+            rx.hstack(
+                rx.spacer(),
+                rx.button(
+                    "Save to Local Leaderboard",
+                    size="3",
+                    color_scheme="blue",
+                    on_click=AppState.add_manager_leaderboard_entry,
+                ),
+            ),
+            spacing="3",
+            width="100%",
+        ),
+        width="100%",
+    )
+
+
+def manager_coverage_section() -> rx.Component:
+    """Coverage controls and manual editing."""
+    return rx.card(
+        rx.vstack(
+            rx.heading("📈 Coverage Insights", size="5"),
+            rx.text("Inspect leaderboard payloads, delete outliers, or insert manual entries.", size="2", color="gray"),
+            rx.cond(
+                AppState.manager_leaderboard.length() > 0,
+                rx.table.root(
+                    rx.table.header(
+                        rx.table.row(
+                            rx.table.column_header_cell("Rank"),
+                            rx.table.column_header_cell("Model"),
+                            rx.table.column_header_cell("Language"),
+                            rx.table.column_header_cell("Subject"),
+                            rx.table.column_header_cell("Task Type"),
+                            rx.table.column_header_cell("Score"),
+                            rx.table.column_header_cell("Actions"),
+                        )
+                    ),
+                    rx.table.body(
+                        rx.foreach(
+                            AppState.manager_leaderboard,
+                            manager_leaderboard_table_row,
+                        )
+                    ),
+                ),
+                rx.center(
+                    rx.text("No leaderboard rows yet. Add one below.", color="gray"),
+                    padding="2rem",
+                ),
+            ),
+            manager_leaderboard_form(),
+            spacing="3",
+            width="100%",
+        ),
+        width="100%",
+    )
+
+
+def manager_page() -> rx.Component:
+    """Main manager dashboard layout."""
+    return rx.vstack(
+        rx.heading("🛠 Manager Console", size="6", margin_bottom="1rem"),
+        manager_health_section(),
+        manager_tasks_section(),
+        manager_coverage_section(),
+        spacing="4",
+        width="100%",
+    )
+
+
 def index() -> rx.Component:
     """Main application layout."""
     return rx.container(
@@ -786,7 +1284,11 @@ def index() -> rx.Component:
             rx.cond(
                 AppState.current_page == "status",
                 status_page(),
-                leaderboard_page(),
+                rx.cond(
+                    AppState.current_page == "leaderboard",
+                    leaderboard_page(),
+                    manager_page(),
+                ),
             ),
         ),
         
