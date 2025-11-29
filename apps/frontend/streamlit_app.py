@@ -65,25 +65,60 @@ if "task_history" not in st.session_state:
 if "current_task_id" not in st.session_state:
     st.session_state.current_task_id = None
 
+if "user" not in st.session_state:
+    st.session_state.user = None
+
+if "access_token" not in st.session_state:
+    st.session_state.access_token = None
+
+if "requests_session" not in st.session_state:
+    st.session_state.requests_session = requests.Session()
+
+# Check for logout request
+query_params = st.query_params
+if "logout" in query_params:
+    st.session_state.user = None
+    st.session_state.access_token = None
+    st.session_state.requests_session = requests.Session()
+    st.query_params.clear()
+    st.rerun()
+
+# Check for token in URL (from OAuth callback)
+if "token" in query_params:
+    token = query_params["token"]
+    st.session_state.access_token = token
+    st.query_params.clear()
+    st.rerun()
+
 
 def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = None) -> Optional[Dict]:
-    """Make API request with error handling."""
+    """Make API request with error handling and JWT token support."""
     
     try:
         url = f"{API_BASE_URL}{endpoint}"
+        session = st.session_state.requests_session
+        
+        # Add JWT token to headers if available
+        headers = {}
+        if st.session_state.access_token:
+            headers["Authorization"] = f"Bearer {st.session_state.access_token}"
         
         if method == "GET":
-            response = requests.get(url, timeout=30)
+            response = session.get(url, headers=headers, timeout=30)
         elif method == "POST":
-            response = requests.post(url, json=data, timeout=30)
+            response = session.post(url, json=data, headers=headers, timeout=30)
         elif method == "DELETE":
-            response = requests.delete(url, timeout=30)
+            response = session.delete(url, headers=headers, timeout=30)
         else:
             st.error(f"Unsupported HTTP method: {method}")
             return None
         
-        if response.status_code == 200:
+        if response.status_code in [200, 202]:
             return response.json()
+        elif response.status_code == 401:
+            st.session_state.user = None
+            st.session_state.access_token = None
+            return None
         else:
             st.error(f"API Error {response.status_code}: {response.text}")
             return None
@@ -94,6 +129,230 @@ def make_api_request(endpoint: str, method: str = "GET", data: Optional[Dict] = 
     except Exception as e:
         st.error(f"Unexpected error: {e}")
         return None
+
+
+def check_auth():
+    """Check authentication status."""
+    if not st.session_state.access_token:
+        st.session_state.user = None
+        return False
+    
+    try:
+        headers = {"Authorization": f"Bearer {st.session_state.access_token}"}
+        response = st.session_state.requests_session.get(
+            f"{API_BASE_URL}/api/v1/auth/me",
+            headers=headers,
+            timeout=5
+        )
+        
+        # Debug logging
+        logger.info(f"Auth check - Status: {response.status_code}")
+        logger.info(f"Auth check - URL: {API_BASE_URL}/api/v1/auth/me")
+        
+        if response.status_code == 200:
+            st.session_state.user = response.json()
+            logger.info(f"Auth check - User: {st.session_state.user}")
+            return True
+        else:
+            # Token invalid or expired
+            logger.error(f"Auth check failed - Status: {response.status_code}, Response: {response.text}")
+            st.session_state.access_token = None
+            st.session_state.user = None
+            return False
+    except Exception as e:
+        logger.error(f"Auth check exception: {e}")
+        st.session_state.user = None
+        return False
+
+
+def render_auth_section():
+    """Render auth section in top-right corner."""
+    is_auth = check_auth()
+    browser_api_url = os.getenv("BROWSER_API_URL", "http://localhost:8001")
+    login_url = f"{browser_api_url}/api/v1/auth/google/login"
+    logout_url = f"{browser_api_url}/api/v1/auth/logout"
+    
+    if is_auth and st.session_state.user:
+        user = st.session_state.user
+        picture = user.get("picture", "")
+        name = user.get("name", "User")
+        email = user.get("email", "")
+        
+        st.markdown(
+            f"""
+            <div id="auth-container">
+                <div class="auth-dropdown">
+                    <input type="checkbox" id="auth-toggle" class="auth-toggle-checkbox">
+                    <label for="auth-toggle" class="auth-profile-btn">
+                        <img src="{picture}" class="auth-avatar" onerror="this.src='https://ui-avatars.com/api/?name={name}&background=667eea&color=fff'">
+                        <span class="auth-name">{name}</span>
+                        <svg class="dropdown-arrow" width="12" height="12" viewBox="0 0 12 12">
+                            <path d="M6 9L1 4h10z" fill="#5f6368"/>
+                        </svg>
+                    </label>
+                    <div class="auth-dropdown-content">
+                        <div class="auth-user-info">
+                            <img src="{picture}" style="width:60px;height:60px;border-radius:50%;margin-bottom:12px;" onerror="this.src='https://ui-avatars.com/api/?name={name}&background=667eea&color=fff'">
+                            <strong style="font-size:18px;font-weight:600;color:#3c4043;margin-bottom:6px;display:block;">{name}</strong>
+                            <span style="font-size:13px;color:#666;">{email}</span>
+                        </div>
+                        <form action="{logout_url}" method="POST" style="margin:0;padding:0;">
+                            <button type="submit" class="auth-logout-btn">
+                                Logout
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+            <style>
+                #auth-container {{
+                    position: fixed;
+                    top: 60px;
+                    right: 20px;
+                    z-index: 999999;
+                }}
+                .auth-dropdown {{
+                    position: relative;
+                    display: inline-block;
+                }}
+                .auth-toggle-checkbox {{
+                    display: none;
+                }}
+                .auth-profile-btn {{
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 6px 12px 6px 6px;
+                    background: white;
+                    border: 1px solid #dadce0;
+                    border-radius: 24px;
+                    cursor: pointer;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: all 0.2s;
+                    user-select: none;
+                }}
+                .auth-profile-btn:hover {{
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                    border-color: #667eea;
+                }}
+                .auth-avatar {{
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    flex-shrink: 0;
+                }}
+                .auth-name {{
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: #3c4043;
+                    max-width: 120px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }}
+                .dropdown-arrow {{
+                    flex-shrink: 0;
+                    transition: transform 0.2s;
+                }}
+                .auth-toggle-checkbox:checked ~ .auth-profile-btn .dropdown-arrow {{
+                    transform: rotate(180deg);
+                }}
+                .auth-dropdown-content {{
+                    display: none;
+                    position: absolute;
+                    right: 0;
+                    top: 50px;
+                    background-color: white;
+                    min-width: 250px;
+                    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+                    border-radius: 8px;
+                    padding: 20px;
+                    z-index: 1000000;
+                }}
+                .auth-toggle-checkbox:checked ~ .auth-dropdown-content {{
+                    display: block;
+                }}
+                .auth-user-info {{
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    padding-bottom: 15px;
+                    border-bottom: 1px solid #eee;
+                    margin-bottom: 15px;
+                }}
+                .auth-logout-btn {{
+                    display: block;
+                    width: 100%;
+                    padding: 10px;
+                    background: #dc3545;
+                    color: white;
+                    text-align: center;
+                    text-decoration: none;
+                    border-radius: 6px;
+                    font-weight: 600;
+                    transition: background 0.2s;
+                    cursor: pointer;
+                }}
+                .auth-logout-btn:hover {{
+                    background: #c82333;
+                }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        # Not logged in state
+        st.markdown(
+            f"""
+            <div id="auth-container">
+                <a href="{login_url}" target="_self" style="text-decoration: none;">
+                    <div class="auth-login-btn">
+                        <svg class="google-icon" viewBox="0 0 24 24" width="20" height="20">
+                            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                        </svg>
+                        <span class="login-text">Google Login</span>
+                    </div>
+                </a>
+            </div>
+            <style>
+                #auth-container {{
+                    position: fixed;
+                    top: 60px;
+                    right: 20px;
+                    z-index: 999999;
+                }}
+                .auth-login-btn {{
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                    padding: 10px 16px;
+                    background: white;
+                    border: 1px solid #dadce0;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                    transition: all 0.2s;
+                }}
+                .auth-login-btn:hover {{
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                    border-color: #4285F4;
+                }}
+                .google-icon {{
+                    flex-shrink: 0;
+                }}
+                .login-text {{
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: #3c4043;
+                    white-space: nowrap;
+                }}
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
 
 
 def render_header():
@@ -691,6 +950,7 @@ def main():
     """Main application."""
     
     render_header()
+    render_auth_section()
     
     # Navigation menu
     nav_options = ["Evaluate", "Status", "Browse", "System"]
