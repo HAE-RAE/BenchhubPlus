@@ -14,7 +14,7 @@ from ..core.config import get_settings
 from ..core.db import init_db
 from ..core.security import RedisRateLimiter
 from ..worker.celery_app import celery_app
-from .routes import leaderboard, status, hret
+from .routes import auth, leaderboard, status, hret
 from .seeding import seed_database  # <-- [수정] 시딩 함수 임포트
 
 try:
@@ -118,7 +118,12 @@ app = FastAPI(
 # Add CORS middleware
 allowed_origins = settings.cors_allowed_origins
 if not allowed_origins:
-    logger.warning("CORS allowed origins are empty; cross-origin requests will be blocked.")
+    # Default to allowing frontend in development
+    allowed_origins = [
+        f"http://{settings.frontend_host}:{settings.frontend_port}",
+        "http://localhost:8501",
+    ]
+    logger.warning(f"CORS allowed origins not configured, using defaults: {allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -145,6 +150,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # Include routers
+app.include_router(auth.router)
 app.include_router(leaderboard.router)
 app.include_router(status.router)
 app.include_router(hret.router)
@@ -168,6 +174,12 @@ async def api_info():
         "name": "BenchHub Plus API",
         "version": "2.0.0",
         "endpoints": {
+            "auth": {
+                "google_login": "GET /api/v1/auth/google/login",
+                "google_callback": "GET /api/v1/auth/google/callback",
+                "me": "GET /api/v1/auth/me",
+                "logout": "POST /api/v1/auth/logout"
+            },
             "leaderboard": {
                 "generate": "POST /api/v1/leaderboard/generate",
                 "browse": "GET /api/v1/leaderboard/browse",

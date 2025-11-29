@@ -245,3 +245,15 @@ class HealthResponse(BaseModel):
     database_status: str = "connected"
     redis_status: str = "connected"
     celery_status: str = "connected"
+
+
+class UserResponse(BaseModel):
+    """User information response."""
+    
+    id: int = Field(..., description="User ID")
+    email: str = Field(..., description="User email address")
+    name: Optional[str] = Field(None, description="User full name")
+    picture: Optional[str] = Field(None, description="User profile picture URL")
+    email_verified: bool = Field(..., description="Whether email is verified")
+    created_at: Optional[datetime] = Field(None, description="Account creation timestamp")
+    last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")
