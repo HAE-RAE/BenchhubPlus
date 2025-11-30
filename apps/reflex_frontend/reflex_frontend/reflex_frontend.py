@@ -11,7 +11,7 @@ import os
 from rxconfig import config
 
 # API Configuration
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:8000")
+DEFAULT_API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
 API_TIMEOUT = 30
 
 
@@ -19,7 +19,8 @@ class AppState(rx.State):
     """Main application state for BenchHub Plus."""
     
     # API Configuration
-    api_base_url: str = os.getenv("API_BASE_URL", "http://localhost:12000")
+    api_base_url: str = DEFAULT_API_BASE
+    access_token: str = os.getenv("MANAGER_TOKEN", "")
     
     # Current page
     current_page: str = "evaluation"
@@ -124,85 +125,84 @@ class AppState(rx.State):
             self.max_results = int(value)
         except ValueError:
             self.max_results = 100
+
+    def set_access_token(self, value: str):
+        """Set the auth token (e.g., from query param)."""
+        self.access_token = value
+
+    def _auth_headers(self) -> Dict[str, str]:
+        """Build authorization headers if token is available."""
+        headers: Dict[str, str] = {}
+        if self.access_token:
+            headers["Authorization"] = f"Bearer {self.access_token}"
+        return headers
+
+    def _format_duration(self, seconds: float) -> str:
+        """Format duration seconds into label."""
+        if seconds is None:
+            return "-"
+        minutes = int(seconds // 60)
+        secs = int(seconds % 60)
+        if minutes == 0:
+            return f"{secs}s"
+        return f"{minutes}m {secs}s"
     
 
     # ----- Manager dashboard helpers -----
-    def refresh_manager_snapshot(self):
-        """Populate mock manager data until backend wiring is ready."""
-        snapshot_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.manager_health = {
-            "database": "connected",
-            "redis": "connected",
-            "planner": "healthy",
-            "hret": "available",
-        }
-        self.manager_capacity = {
-            "pending": 3,
-            "running": 1,
-            "success": 14,
-            "failure": 2,
-            "cache_entries": 42,
-        }
-        self.manager_tasks = [
-            {
-                "id": "task_local_001",
-                "status": "PENDING",
-                "query": "Compare GPT-4 vs Claude-3 on KR history",
-                "models_label": "Models: gpt-4, claude-3",
-                "submitted_at": "2024-11-17 11:45",
-                "duration": "-",
-                "duration_label": "Duration: -",
-            },
-            {
-                "id": "task_local_002",
-                "status": "STARTED",
-                "query": "Evaluate codellama on bug fixing",
-                "models_label": "Models: codellama, gpt-4",
-                "submitted_at": "2024-11-17 11:10",
-                "duration": "12m",
-                "duration_label": "Duration: 12m",
-            },
-            {
-                "id": "task_local_003",
-                "status": "FAILURE",
-                "query": "Massive multi-model request",
-                "models_label": "Models: model_a, model_b, model_c, model_d",
-                "submitted_at": "2024-11-17 10:55",
-                "duration": "2m",
-                "duration_label": "Duration: 2m",
-            },
-        ]
-        self.manager_leaderboard = [
-            {
-                "id": "lb_1",
-                "rank": 1,
-                "model": "GPT-4",
-                "language": "Korean",
-                "subject": "Math",
-                "task_type": "Reasoning",
-                "score": 91.4,
-            },
-            {
-                "id": "lb_2",
-                "rank": 2,
-                "model": "Claude-3",
-                "language": "Korean",
-                "subject": "Math",
-                "task_type": "Reasoning",
-                "score": 89.1,
-            },
-            {
-                "id": "lb_3",
-                "rank": 3,
-                "model": "Llama-2",
-                "language": "English",
-                "subject": "Coding",
-                "task_type": "Bug Fixing",
-                "score": 74.8,
-            },
-        ]
-        self.manager_last_updated = snapshot_time
-        self.manager_snapshot_loaded = True
+    async def refresh_manager_snapshot(self):
+        """Fetch snapshot from backend manager API."""
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                response = await client.get(
+                    f"{self.api_base_url}/api/v1/manager/snapshot",
+                    headers=self._auth_headers(),
+                )
+                if response.status_code != 200:
+                    detail = response.json().get("detail", "Failed to load snapshot")
+                    return rx.toast.error(detail)
+
+                data = response.json()
+                health_raw = data.get("health", {})
+                self.manager_health = {k: v.get("status", "unknown") for k, v in health_raw.items()}
+                self.manager_capacity = data.get("capacity", {})
+
+                tasks = []
+                for item in data.get("tasks", []):
+                    duration_label = self._format_duration(item.get("duration_seconds"))
+                    tasks.append(
+                        {
+                            "id": item.get("task_id"),
+                            "status": item.get("status"),
+                            "query": item.get("query") or "N/A",
+                            "models_label": f"Models: {item.get('model_count') or '-'}",
+                            "submitted_at": str(item.get("submitted_at")),
+                            "duration": duration_label,
+                            "duration_label": f"Duration: {duration_label}",
+                        }
+                    )
+                self.manager_tasks = tasks
+
+                leaderboard = []
+                for idx, entry in enumerate(data.get("leaderboard", []), start=1):
+                    leaderboard.append(
+                        {
+                            "id": entry.get("id"),
+                            "rank": idx,
+                            "model": entry.get("model_name"),
+                            "language": entry.get("language"),
+                            "subject": entry.get("subject_type"),
+                            "task_type": entry.get("task_type"),
+                            "score": entry.get("score"),
+                        }
+                    )
+                self.manager_leaderboard = leaderboard
+                self.manager_last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                self.manager_snapshot_loaded = True
+                return rx.toast.success("Snapshot updated")
+        except httpx.HTTPStatusError as e:
+            return rx.toast.error(f"Snapshot error: {e.response.text}")
+        except Exception as e:
+            return rx.toast.error(f"Snapshot failed: {e}")
 
     def update_manager_task_status(self, task_id: str, status: str):
         """Update a task inside the mock queue."""
@@ -220,6 +220,23 @@ class AppState(rx.State):
         """Delete a task from the mock queue."""
         self.manager_tasks = [task for task in self.manager_tasks if task["id"] != task_id]
 
+    async def manager_patch_task(self, task_id: str, action: str):
+        """Call backend to control a task."""
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                response = await client.patch(
+                    f"{self.api_base_url}/api/v1/tasks/{task_id}",
+                    json={"action": action},
+                    headers=self._auth_headers(),
+                )
+                if response.status_code >= 300:
+                    detail = response.json().get("detail", "Failed to update task")
+                    return rx.toast.error(detail)
+                await self.refresh_manager_snapshot()
+                return rx.toast.success(f"Task {task_id} updated: {action}")
+        except Exception as e:
+            return rx.toast.error(f"Task update failed: {e}")
+
     def update_manager_new_entry(self, field: str, value: str):
         """Update leaderboard entry draft state."""
         updated = self.manager_new_entry.copy()
@@ -233,8 +250,8 @@ class AppState(rx.State):
             entry["rank"] = idx
         self.manager_leaderboard = sorted_entries
 
-    def add_manager_leaderboard_entry(self):
-        """Add an entry to the mock leaderboard."""
+    async def add_manager_leaderboard_entry(self):
+        """Add an entry to the backend leaderboard (admin)."""
         payload = self.manager_new_entry
         if not payload["model"] or not payload["score"]:
             return rx.toast.error("Model name and score are required")
@@ -242,32 +259,51 @@ class AppState(rx.State):
             score_value = float(payload["score"])
         except ValueError:
             return rx.toast.error("Score must be numeric")
-        new_entry = {
-            "id": f"lb_custom_{len(self.manager_leaderboard) + 1}",
-            "rank": 0,
-            "model": payload["model"],
-            "language": payload.get("language", ""),
-            "subject": payload.get("subject", ""),
-            "task_type": payload.get("task_type", ""),
-            "score": score_value,
-        }
-        self._recalculate_leaderboard(self.manager_leaderboard + [new_entry])
-        self.manager_new_entry = {
-            "model": "",
-            "language": "",
-            "subject": "",
-            "task_type": "",
-            "score": "",
-        }
-        return rx.toast.success("Entry saved locally")
 
-    def remove_manager_leaderboard_entry(self, entry_id: str):
-        """Remove an entry by ID."""
-        entries = [entry for entry in self.manager_leaderboard if entry["id"] != entry_id]
-        if len(entries) == len(self.manager_leaderboard):
-            return
-        self._recalculate_leaderboard(entries)
-        return rx.toast.info("Entry removed")
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                response = await client.post(
+                    f"{self.api_base_url}/api/v1/leaderboard/entries",
+                    json={
+                        "model_name": payload["model"],
+                        "language": payload.get("language", ""),
+                        "subject_type": payload.get("subject", ""),
+                        "task_type": payload.get("task_type", ""),
+                        "score": score_value,
+                    },
+                    headers=self._auth_headers(),
+                )
+                if response.status_code >= 300:
+                    detail = response.json().get("detail", "Failed to save entry")
+                    return rx.toast.error(detail)
+
+                self.manager_new_entry = {
+                    "model": "",
+                    "language": "",
+                    "subject": "",
+                    "task_type": "",
+                    "score": "",
+                }
+                await self.refresh_manager_snapshot()
+                return rx.toast.success("Entry saved")
+        except Exception as e:
+            return rx.toast.error(f"Failed to save entry: {e}")
+
+    async def remove_manager_leaderboard_entry(self, entry_id: str):
+        """Remove an entry by ID via backend."""
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                response = await client.delete(
+                    f"{self.api_base_url}/api/v1/leaderboard/entries/{entry_id}",
+                    headers=self._auth_headers(),
+                )
+                if response.status_code >= 300:
+                    detail = response.json().get("detail", "Failed to delete entry")
+                    return rx.toast.error(detail)
+                await self.refresh_manager_snapshot()
+                return rx.toast.info("Entry removed")
+        except Exception as e:
+            return rx.toast.error(f"Failed to delete entry: {e}")
 
     def add_model(self):
         """Add a new model configuration."""
@@ -324,8 +360,9 @@ class AppState(rx.State):
             
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
                 response = await client.post(
-                    f"{API_BASE_URL}/hret/evaluate",
-                    json=payload
+                    f"{self.api_base_url}/hret/evaluate",
+                    json=payload,
+                    headers=self._auth_headers(),
                 )
                 
                 if response.status_code == 200:
@@ -362,7 +399,10 @@ class AppState(rx.State):
         """Refresh status of a specific task."""
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-                response = await client.get(f"{API_BASE_URL}/hret/evaluate/{task_id}")
+                response = await client.get(
+                    f"{self.api_base_url}/hret/evaluate/{task_id}",
+                    headers=self._auth_headers(),
+                )
                 
                 if response.status_code == 200:
                     task_data = response.json()
@@ -383,7 +423,10 @@ class AppState(rx.State):
         """Load leaderboard data from backend."""
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
-                response = await client.get(f"{API_BASE_URL}/api/v1/leaderboard/browse")
+                response = await client.get(
+                    f"{self.api_base_url}/api/v1/leaderboard/browse",
+                    headers=self._auth_headers(),
+                )
                 
                 if response.status_code == 200:
                     data = response.json()
@@ -1009,25 +1052,25 @@ def manager_task_card(task: rx.Var[dict]) -> rx.Component:
             rx.text(task["duration_label"], size="2", color="gray"),
             rx.hstack(
                 rx.button(
-                    "Mark Success",
+                    "Restart",
                     size="1",
                     variant="soft",
                     color_scheme="green",
-                    on_click=lambda: AppState.update_manager_task_status(task["id"], "SUCCESS"),
+                    on_click=lambda: AppState.manager_patch_task(task["id"], "restart"),
                 ),
                 rx.button(
-                    "Mark Failure",
+                    "Hold",
                     size="1",
                     variant="soft",
-                    color_scheme="red",
-                    on_click=lambda: AppState.update_manager_task_status(task["id"], "FAILURE"),
+                    color_scheme="orange",
+                    on_click=lambda: AppState.manager_patch_task(task["id"], "hold"),
                 ),
                 rx.button(
-                    "Remove",
+                    "Cancel",
                     size="1",
                     variant="outline",
-                    color_scheme="gray",
-                    on_click=lambda: AppState.remove_manager_task(task["id"]),
+                    color_scheme="red",
+                    on_click=lambda: AppState.manager_patch_task(task["id"], "cancel"),
                 ),
                 spacing="2",
             ),

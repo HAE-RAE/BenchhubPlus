@@ -15,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     CheckConstraint,
+    ForeignKey,
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -56,6 +57,8 @@ class User(Base):
     full_name = Column(String(255), nullable=True)
     picture_url = Column(String(500), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
+    role = Column(String(50), default="user", nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -66,6 +69,7 @@ class User(Base):
     __table_args__ = (
         Index('idx_users_google_id', 'google_id'),
         Index('idx_users_email', 'email'),
+        Index('idx_users_role', 'role'),
     )
     
     def __repr__(self) -> str:
@@ -79,15 +83,33 @@ class LeaderboardCache(Base):
     
     __tablename__ = "leaderboard_cache"
     
-    model_name = Column(String(255), primary_key=True, nullable=False)
-    language = Column(String(50), primary_key=True, nullable=False)
-    subject_type = Column(String(100), primary_key=True, nullable=False)
-    task_type = Column(String(100), primary_key=True, nullable=False)
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    model_name = Column(String(255), nullable=False)
+    language = Column(String(50), nullable=False)
+    subject_type = Column(String(100), nullable=False)
+    task_type = Column(String(100), nullable=False)
     score = Column(Float, nullable=False)
+    quarantined = Column(Boolean, default=False, nullable=False)
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False
+    )
     last_updated = Column(
         DateTime(timezone=True), 
         server_default=func.now(),
         nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "model_name",
+            "language",
+            "subject_type",
+            "task_type",
+            name="uq_leaderboard_cache_entry",
+        ),
     )
     
     def __repr__(self) -> str:
@@ -104,26 +126,38 @@ class EvaluationTask(Base):
     __tablename__ = "evaluation_tasks"
     
     task_id = Column(String(255), primary_key=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     status = Column(
         String(20), 
         nullable=False,
         default="PENDING"
     )
     plan_details = Column(Text, nullable=True)
+    request_payload = Column(Text, nullable=True)
     result = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
+    error_log = Column(Text, nullable=True)
+    policy_tags = Column(Text, nullable=True)
+    model_count = Column(Integer, nullable=True)
     created_at = Column(
         DateTime(timezone=True), 
         server_default=func.now(),
         nullable=False
     )
     completed_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False
+    )
     
     __table_args__ = (
         CheckConstraint(
-            "status IN ('PENDING', 'STARTED', 'SUCCESS', 'FAILURE')",
+            "status IN ('PENDING', 'STARTED', 'SUCCESS', 'FAILURE', 'CANCELLED', 'HOLD')",
             name="check_status_values"
         ),
+        Index("idx_tasks_status_created", "status", "created_at"),
     )
     
     def __repr__(self) -> str:
@@ -192,6 +226,28 @@ class ModelCredential(Base):
                 base=self.api_base,
             )
         )
+
+
+class AuditLog(Base):
+    """Audit trail for administrative actions."""
+
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(100), nullable=False)
+    resource = Column(String(100), nullable=False)
+    resource_id = Column(String(255), nullable=True)
+    meta = Column(Text, nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("idx_audit_resource", "resource", "created_at"),
+    )
 
 
 def create_tables() -> None:

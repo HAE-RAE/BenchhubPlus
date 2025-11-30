@@ -43,12 +43,14 @@ class LeaderboardQuery(BaseModel):
 class LeaderboardEntry(BaseModel):
     """Single entry in leaderboard."""
     
+    id: Optional[int] = None
     model_name: str
     language: str
     subject_type: str
     task_type: str
     score: float
     last_updated: datetime
+    quarantined: bool = False
     
     class Config:
         from_attributes = True
@@ -84,6 +86,8 @@ class LeaderboardSuggestionResponse(BaseModel):
     subject_type_options: List[str] = Field(default_factory=list)
     plan_summary: str
     used_planner: bool = False
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    rationale: Optional[str] = None
     metadata: Optional[Dict[str, Any]] = None
 
 
@@ -91,12 +95,17 @@ class TaskStatus(BaseModel):
     """Task status information."""
     
     task_id: str
-    status: str = Field(..., pattern="^(PENDING|STARTED|SUCCESS|FAILURE)$")
+    status: str = Field(..., pattern="^(PENDING|STARTED|SUCCESS|FAILURE|CANCELLED|HOLD)$")
     plan_details: Optional[str] = None
     result: Optional[str] = None
     error_message: Optional[str] = None
+    error_log: Optional[str] = None
+    policy_tags: Optional[List[str]] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
+    user_id: Optional[int] = None
+    model_count: Optional[int] = None
+    request_payload: Optional[str] = None
     
     class Config:
         from_attributes = True
@@ -108,6 +117,34 @@ class TaskResponse(BaseModel):
     task_id: str
     status: str
     message: str
+
+
+class TaskActionRequest(BaseModel):
+    """Request to control a task."""
+
+    action: str = Field(..., pattern="^(cancel|hold|resume|restart)$")
+    note: Optional[str] = None
+    policy_tags: Optional[List[str]] = None
+
+
+class TaskDetailResponse(BaseModel):
+    """Full task detail for manager view."""
+
+    task_id: str
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    user_id: Optional[int] = None
+    model_count: Optional[int] = None
+    policy_tags: Optional[List[str]] = None
+    request_payload: Optional[Dict[str, Any]] = None
+    plan_details: Optional[Dict[str, Any]] = None
+    result: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+    error_log: Optional[str] = None
+
+    class Config:
+        json_encoders = {datetime: lambda dt: dt.isoformat()}
 
 
 class ExperimentSampleCreate(BaseModel):
@@ -257,3 +294,40 @@ class UserResponse(BaseModel):
     email_verified: bool = Field(..., description="Whether email is verified")
     created_at: Optional[datetime] = Field(None, description="Account creation timestamp")
     last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")
+
+
+class ComponentHealth(BaseModel):
+    """Component health detail."""
+
+    name: str
+    status: str
+    checked_at: datetime = Field(default_factory=datetime.utcnow)
+    version: Optional[str] = None
+    detail: Optional[Dict[str, Any]] = None
+
+
+class ManagerSnapshot(BaseModel):
+    """Aggregated snapshot for manager UI."""
+
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    health: Dict[str, ComponentHealth]
+    capacity: Dict[str, Any]
+    tasks: List[Dict[str, Any]]
+    leaderboard: List[LeaderboardEntry]
+    planner_available: bool
+    hret_available: bool
+
+
+class AuditLogEntry(BaseModel):
+    """Audit log entry."""
+
+    id: int
+    action: str
+    resource: str
+    resource_id: Optional[str] = None
+    user_id: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
