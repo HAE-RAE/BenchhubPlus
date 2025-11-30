@@ -49,6 +49,7 @@ services:
       - API_PORT=8000
       - DEBUG=true
       - LOG_LEVEL=debug
+      - FRONTEND_URL=http://localhost:8502
     ports:
       - "8001:8000"
     depends_on:
@@ -93,6 +94,7 @@ services:
     container_name: benchhub_frontend_dev
     environment:
       - API_BASE_URL=http://backend:8000
+      - BROWSER_API_URL=http://localhost:8001
     ports:
       - "8502:8501"
     depends_on:
