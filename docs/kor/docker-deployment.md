@@ -54,6 +54,8 @@ cp .env.example .env  # 환경 변수 입력
 `.env` 파일에 다음 값을 설정합니다.
 ```env
 OPENAI_API_KEY=your_openai_api_key_here
+SECRET_KEY=32바이트_이상의_난수_시크릿
+CORS_ALLOWED_ORIGINS=https://frontend.example.com
 POSTGRES_PASSWORD=secure_database_password
 POSTGRES_USER=benchhub
 POSTGRES_DB=benchhub_plus
@@ -63,6 +65,13 @@ LOG_LEVEL=info
 DOMAIN=your-domain.com
 SSL_EMAIL=your-email@domain.com
 ```
+
+### 시크릿 로테이션 절차
+
+1. **새로운 값 준비**: 보안 저장소에서 새로운 `SECRET_KEY`와 외부 API 키를 생성합니다.
+2. **환경 변수 갱신**: Kubernetes Secret, Docker Compose `.env` 등 배포 환경에 최신 값을 반영합니다.
+3. **서비스 재시작**: 백엔드와 Celery 워커를 재기동해 암호화 키와 API 자격 증명을 다시 불러옵니다.
+4. **정상 여부 확인**: `GET /api/v1/health` 엔드포인트를 호출해 데이터베이스, Redis, Celery 상태가 `connected`인지 확인합니다.
 
 ## 🧱 Docker Compose 파일
 - `docker-compose.dev.yml`: 개발용. 포트 매핑, 라이브 리로드, 볼륨 공유 지원

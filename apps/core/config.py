@@ -1,7 +1,7 @@
 """Configuration management for BenchHub Plus."""
 
 import os
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -37,10 +37,13 @@ class Settings(BaseSettings):
     # Frontend Configuration
     frontend_host: str = Field(default="0.0.0.0", description="Frontend host")
     frontend_port: int = Field(default=8501, description="Frontend port")
+    frontend_url: str = Field(
+        default="http://localhost:8502",
+        description="Frontend URL for browser redirects"
+    )
     
     # LLM Configuration (for Planner Agent)
-    openai_api_key: Optional[str] = Field(
-        default=None, 
+    openai_api_key: str = Field(
         description="OpenAI API key for planner agent"
     )
     planner_model: str = Field(
@@ -54,13 +57,32 @@ class Settings(BaseSettings):
     
     # Security
     secret_key: str = Field(
-        default="your_secret_key_here_change_in_production",
-        description="Secret key for JWT tokens"
+        description="Secret key for API key encryption (Fernet). Used to encrypt/decrypt model API keys stored in database."
     )
-    algorithm: str = Field(default="HS256", description="JWT algorithm")
-    access_token_expire_minutes: int = Field(
-        default=30, 
-        description="Access token expiration time in minutes"
+    
+    # Google OAuth Configuration
+    google_client_id: str = Field(
+        description="Google OAuth Client ID"
+    )
+    google_client_secret: str = Field(
+        description="Google OAuth Client Secret"
+    )
+    google_redirect_uri: str = Field(
+        default="http://localhost:8001/api/v1/auth/google/callback",
+        description="Google OAuth Redirect URI"
+    )
+    
+    # JWT Configuration
+    jwt_secret_key: str = Field(
+        description="JWT Secret Key for access tokens"
+    )
+    jwt_algorithm: str = Field(
+        default="HS256",
+        description="JWT Algorithm"
+    )
+    access_token_expire_hours: int = Field(
+        default=24,
+        description="Access token expiration time in hours"
     )
     
     # Celery Configuration
@@ -107,8 +129,13 @@ class Settings(BaseSettings):
         description="Rate limit per minute"
     )
     rate_limit_burst: int = Field(
-        default=10, 
+        default=10,
         description="Rate limit burst"
+    )
+
+    cors_allowed_origins: List[str] = Field(
+        default_factory=list,
+        description="Comma-separated list of allowed CORS origins"
     )
     
     @property

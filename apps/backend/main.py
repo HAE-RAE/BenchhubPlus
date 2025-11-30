@@ -4,6 +4,7 @@ import logging
 import sys
 from contextlib import asynccontextmanager
 
+import redis.asyncio as redis_asyncio
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -11,8 +12,15 @@ import uvicorn
 
 from ..core.config import get_settings
 from ..core.db import init_db
-from .routes import leaderboard, status, hret
+from ..core.security import RedisRateLimiter
+from ..worker.celery_app import celery_app
+from .routes import auth, leaderboard, status, hret
 from .seeding import seed_database  # <-- [수정] 시딩 함수 임포트
+
+try:
+    from kombu.exceptions import OperationalError
+except Exception:  # pragma: no cover - kombu is an optional dependency for type hints
+    OperationalError = Exception
 
 # Configure logging
 logging.basicConfig(
@@ -48,15 +56,53 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {e}")
         raise
     
-    # TODO: Initialize Redis connection
-    # TODO: Initialize Celery connection
-    
+    redis_client = None
+    celery_connection = None
+
+    # Initialize Redis connection
+    try:
+        redis_client = redis_asyncio.from_url(settings.redis_url)
+        await redis_client.ping()
+        app.state.redis = redis_client
+        app.state.redis_rate_limiter = RedisRateLimiter(
+            redis_client,
+            settings.rate_limit_per_minute,
+            60,
+        )
+        logger.info("Redis connection established")
+    except Exception as redis_error:
+        logger.error(f"Failed to connect to Redis: {redis_error}")
+        raise RuntimeError("Redis connection failed") from redis_error
+
+    # Initialize Celery connection
+    try:
+        celery_connection = celery_app.connection()
+        celery_connection.ensure_connection(max_retries=3)
+        app.state.celery_connection = celery_connection
+        logger.info("Celery broker connection established")
+    except OperationalError as celery_error:
+        logger.error(f"Failed to connect to Celery broker: {celery_error}")
+        if redis_client:
+            await redis_client.close()
+        raise RuntimeError("Celery broker connection failed") from celery_error
+
+    app.state.redis_status = "connected"
+    app.state.celery_status = "connected"
+
     logger.info("Backend startup completed")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down BenchHub Plus Backend...")
+
+    if redis_client:
+        await redis_client.close()
+        logger.info("Redis connection closed")
+
+    if celery_connection:
+        celery_connection.release()
+        logger.info("Celery connection released")
 
 
 # Create FastAPI application
@@ -70,11 +116,20 @@ app = FastAPI(
 )
 
 # Add CORS middleware
+allowed_origins = settings.cors_allowed_origins
+if not allowed_origins:
+    # Default to allowing frontend in development
+    allowed_origins = [
+        f"http://{settings.frontend_host}:{settings.frontend_port}",
+        "http://localhost:8501",
+    ]
+    logger.warning(f"CORS allowed origins not configured, using defaults: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # TODO: Configure properly for production
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -95,6 +150,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # Include routers
+app.include_router(auth.router)
 app.include_router(leaderboard.router)
 app.include_router(status.router)
 app.include_router(hret.router)
@@ -118,6 +174,12 @@ async def api_info():
         "name": "BenchHub Plus API",
         "version": "2.0.0",
         "endpoints": {
+            "auth": {
+                "google_login": "GET /api/v1/auth/google/login",
+                "google_callback": "GET /api/v1/auth/google/callback",
+                "me": "GET /api/v1/auth/me",
+                "logout": "POST /api/v1/auth/logout"
+            },
             "leaderboard": {
                 "generate": "POST /api/v1/leaderboard/generate",
                 "browse": "GET /api/v1/leaderboard/browse",

@@ -1,28 +1,28 @@
 """Test configuration and fixtures."""
 
 import os
-import pytest
-import tempfile
 from typing import Generator
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
+
+import pytest
 
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from apps.backend.main import app
 from apps.core.db import Base, get_db
 from apps.core.config import get_settings
+
+from apps.backend.main import app
 
 
 @pytest.fixture(scope="session")
 def test_settings():
     """Test settings fixture."""
     settings = get_settings()
-    settings.DATABASE_URL = "sqlite:///./test.db"
-    settings.TESTING = True
-    settings.DEBUG = True
+    settings.database_url = "sqlite:///./test.db"
+    settings.debug = True
     return settings
 
 
@@ -30,7 +30,7 @@ def test_settings():
 def test_engine(test_settings):
     """Test database engine."""
     engine = create_engine(
-        test_settings.DATABASE_URL,
+        test_settings.database_url,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
@@ -60,17 +60,45 @@ def test_db(test_engine):
 @pytest.fixture(scope="function")
 def client(test_db):
     """Test client with database override."""
+
+    class DummyRedis:
+        async def ping(self):
+            return True
+
+        async def close(self):
+            return None
+
+    class DummyLimiter:
+        async def is_allowed(self, identifier: str):
+            return True, 100
+
+    class DummyCeleryConnection:
+        def ensure_connection(self, max_retries: int = 3):
+            return True
+
+        def release(self):
+            return None
+
+    dummy_redis = DummyRedis()
+    dummy_limiter = DummyLimiter()
+    dummy_celery_connection = DummyCeleryConnection()
+
     def override_get_db():
         try:
             yield test_db
         finally:
             pass
-    
+
     app.dependency_overrides[get_db] = override_get_db
-    
-    with TestClient(app) as test_client:
-        yield test_client
-    
+
+    with patch("apps.backend.main.redis_asyncio.from_url", return_value=dummy_redis), \
+        patch("apps.backend.main.RedisRateLimiter", return_value=dummy_limiter), \
+        patch("apps.backend.main.celery_app.connection", return_value=dummy_celery_connection), \
+        patch("apps.backend.main.celery_app.control.inspect", return_value=Mock(ping=Mock(return_value={"worker": "pong"}))):
+
+        with TestClient(app) as test_client:
+            yield test_client
+
     app.dependency_overrides.clear()
 
 

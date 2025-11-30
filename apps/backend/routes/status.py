@@ -3,7 +3,8 @@
 import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Path
+from fastapi import APIRouter, Depends, HTTPException, Path, Request, status, Response
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -11,6 +12,7 @@ from ...core.db import get_db
 from ...core.schemas import TaskStatus, HealthResponse
 from ..repositories.tasks_repo import TasksRepository
 from ..services.orchestrator import EvaluationOrchestrator
+from ...worker.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -18,9 +20,9 @@ router = APIRouter(prefix="/api/v1", tags=["status"])
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check(db: Session = Depends(get_db)):
+async def health_check(request: Request, response: Response, db: Session = Depends(get_db)):
     """Health check endpoint."""
-    
+
     try:
         # Test database connection
         db.execute(text("SELECT 1"))
@@ -28,18 +30,46 @@ async def health_check(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         db_status = "disconnected"
-    
-    # TODO: Test Redis connection
-    redis_status = "connected"  # Placeholder
-    
+
+    redis_status = "unknown"
+    redis_client = getattr(request.app.state, "redis", None)
+    if redis_client is None:
+        redis_status = "unavailable"
+    else:
+        try:
+            await redis_client.ping()
+            redis_status = "connected"
+        except Exception as e:
+            logger.error(f"Redis health check failed: {e}")
+            redis_status = "disconnected"
+
+    celery_status = "unknown"
+    try:
+        inspection = celery_app.control.inspect(timeout=1)
+        ping_result = inspection.ping() if inspection else None
+        if ping_result:
+            celery_status = "connected"
+        else:
+            celery_status = "no_workers"
+    except Exception as e:
+        logger.error(f"Celery health check failed: {e}")
+        celery_status = "disconnected"
+
     # Determine overall status
-    overall_status = "healthy" if db_status == "connected" else "unhealthy"
-    
-    return HealthResponse(
+    component_statuses = [db_status, redis_status, celery_status]
+    overall_status = "healthy" if all(status == "connected" for status in component_statuses) else "unhealthy"
+
+    response_status = status.HTTP_200_OK if overall_status == "healthy" else status.HTTP_503_SERVICE_UNAVAILABLE
+    response.status_code = response_status
+
+    health_payload = HealthResponse(
         status=overall_status,
         database_status=db_status,
-        redis_status=redis_status
+        redis_status=redis_status,
+        celery_status=celery_status
     )
+
+    return health_payload
 
 
 @router.get("/tasks/{task_id}", response_model=Dict[str, Any])
