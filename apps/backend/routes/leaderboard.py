@@ -101,11 +101,18 @@ async def browse_leaderboard(
     task_type: Optional[str] = Query(None, description="Filter by task type"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of entries"),
     include_quarantined: bool = Query(False, description="Include quarantined entries"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """Browse existing leaderboard entries with optional filtering."""
     
     try:
+        if include_quarantined and not (current_user and (current_user.is_admin or current_user.role == "admin")):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin privileges required to view quarantined entries",
+            )
+
         orchestrator = EvaluationOrchestrator(db)
         result = orchestrator.get_leaderboard_by_criteria(
             language=language,

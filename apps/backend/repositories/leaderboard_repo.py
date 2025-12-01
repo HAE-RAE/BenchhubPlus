@@ -68,7 +68,8 @@ class LeaderboardRepository:
         subject_type: str,
         task_type: str,
         score: float,
-        quarantined: bool = False
+        quarantined: Optional[bool] = None,
+        restore: bool = False,
     ) -> LeaderboardCache:
         """Insert or update leaderboard entry."""
         existing = (
@@ -85,8 +86,14 @@ class LeaderboardRepository:
         if existing:
             existing.score = score
             existing.last_updated = datetime.utcnow()
-            existing.quarantined = quarantined
-            existing.deleted_at = None
+
+            if restore:
+                if quarantined is not None:
+                    existing.quarantined = quarantined
+                existing.deleted_at = None
+            elif quarantined is True:
+                existing.quarantined = True
+
             entry = existing
         else:
             entry = LeaderboardCache(
@@ -95,7 +102,7 @@ class LeaderboardRepository:
                 subject_type=subject_type,
                 task_type=task_type,
                 score=score,
-                quarantined=quarantined,
+                quarantined=bool(quarantined) if quarantined is not None else False,
                 last_updated=datetime.utcnow()
             )
             self.db.add(entry)
@@ -159,6 +166,7 @@ class LeaderboardRepository:
             task_type=task_type,
             score=score,
             quarantined=quarantined,
+            restore=True,
         )
     
     def clear_cache(self, older_than_hours: Optional[int] = None) -> int:
