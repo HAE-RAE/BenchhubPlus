@@ -46,6 +46,7 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.email == google_user["email"]).first()
         
         if not user:
+            is_first_user = db.query(User).count() == 0
             user = User(
                 google_id=google_user["id"],
                 email=google_user["email"],
@@ -53,7 +54,9 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
                 full_name=google_user.get("name"),
                 picture_url=google_user.get("picture"),
                 is_active=True,
-                last_login_at=datetime.now(timezone.utc)
+                last_login_at=datetime.now(timezone.utc),
+                role="admin" if is_first_user else "user",
+                is_admin=is_first_user,
             )
             db.add(user)
             db.commit()

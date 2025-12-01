@@ -14,7 +14,7 @@ from ..core.config import get_settings
 from ..core.db import init_db
 from ..core.security import RedisRateLimiter
 from ..worker.celery_app import celery_app
-from .routes import auth, leaderboard, status, hret
+from .routes import auth, leaderboard, status, hret, manager
 from .seeding import seed_database  # <-- [수정] 시딩 함수 임포트
 
 try:
@@ -154,6 +154,7 @@ app.include_router(auth.router)
 app.include_router(leaderboard.router)
 app.include_router(status.router)
 app.include_router(hret.router)
+app.include_router(manager.router)
 
 
 @app.get("/")

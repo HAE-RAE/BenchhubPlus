@@ -6,7 +6,6 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from ...core.db import LeaderboardCache
-from ...core.schemas import LeaderboardEntry
 
 
 class LeaderboardRepository:
@@ -27,15 +26,22 @@ class LeaderboardRepository:
             LeaderboardCache.model_name == model_name,
             LeaderboardCache.language == language,
             LeaderboardCache.subject_type == subject_type,
-            LeaderboardCache.task_type == task_type
+            LeaderboardCache.task_type == task_type,
+            LeaderboardCache.quarantined.is_(False),
+            LeaderboardCache.deleted_at.is_(None),
         ).first()
+
+    def get_by_id(self, entry_id: int) -> Optional[LeaderboardCache]:
+        """Fetch entry by ID."""
+        return self.db.query(LeaderboardCache).filter(LeaderboardCache.id == entry_id).first()
     
     def get_leaderboard(
         self,
         language: Optional[str] = None,
         subject_type: Optional[str] = None,
         task_type: Optional[str] = None,
-        limit: int = 100
+        limit: int = 100,
+        include_quarantined: bool = False
     ) -> List[LeaderboardCache]:
         """Get leaderboard entries with optional filtering."""
         query = self.db.query(LeaderboardCache)
@@ -46,6 +52,12 @@ class LeaderboardRepository:
             query = query.filter(LeaderboardCache.subject_type == subject_type)
         if task_type:
             query = query.filter(LeaderboardCache.task_type == task_type)
+
+        if not include_quarantined:
+            query = query.filter(
+                LeaderboardCache.quarantined.is_(False),
+                LeaderboardCache.deleted_at.is_(None),
+            )
         
         return query.order_by(LeaderboardCache.score.desc()).limit(limit).all()
     
@@ -55,16 +67,33 @@ class LeaderboardRepository:
         language: str,
         subject_type: str,
         task_type: str,
-        score: float
+        score: float,
+        quarantined: Optional[bool] = None,
+        restore: bool = False,
     ) -> LeaderboardCache:
         """Insert or update leaderboard entry."""
-        existing = self.get_cached_entry(
-            model_name, language, subject_type, task_type
+        existing = (
+            self.db.query(LeaderboardCache)
+            .filter(
+                LeaderboardCache.model_name == model_name,
+                LeaderboardCache.language == language,
+                LeaderboardCache.subject_type == subject_type,
+                LeaderboardCache.task_type == task_type,
+            )
+            .first()
         )
         
         if existing:
             existing.score = score
             existing.last_updated = datetime.utcnow()
+
+            if restore:
+                if quarantined is not None:
+                    existing.quarantined = quarantined
+                existing.deleted_at = None
+            elif quarantined is True:
+                existing.quarantined = True
+
             entry = existing
         else:
             entry = LeaderboardCache(
@@ -73,6 +102,7 @@ class LeaderboardRepository:
                 subject_type=subject_type,
                 task_type=task_type,
                 score=score,
+                quarantined=bool(quarantined) if quarantined is not None else False,
                 last_updated=datetime.utcnow()
             )
             self.db.add(entry)
@@ -99,6 +129,45 @@ class LeaderboardRepository:
             return True
         
         return False
+
+    def soft_delete(self, entry_id: int, quarantine: bool = True) -> bool:
+        """Soft delete (quarantine) an entry."""
+        entry = self.get_by_id(entry_id)
+        if not entry:
+            return False
+        entry.quarantined = quarantine
+        entry.deleted_at = datetime.utcnow()
+        self.db.commit()
+        return True
+
+    def hard_delete(self, entry_id: int) -> bool:
+        """Physically remove an entry."""
+        entry = self.get_by_id(entry_id)
+        if not entry:
+            return False
+        self.db.delete(entry)
+        self.db.commit()
+        return True
+
+    def manual_entry(
+        self,
+        model_name: str,
+        language: str,
+        subject_type: str,
+        task_type: str,
+        score: float,
+        quarantined: bool = False,
+    ) -> LeaderboardCache:
+        """Create or update an entry from admin input."""
+        return self.upsert_entry(
+            model_name=model_name,
+            language=language,
+            subject_type=subject_type,
+            task_type=task_type,
+            score=score,
+            quarantined=quarantined,
+            restore=True,
+        )
     
     def clear_cache(self, older_than_hours: Optional[int] = None) -> int:
         """Clear cache entries, optionally only older than specified hours."""
