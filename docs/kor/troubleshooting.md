@@ -48,9 +48,9 @@ BenchHub Plus 사용 중 자주 발생하는 문제와 해결 방법을 정리�
   ```
 - **워커 재시작**: `docker compose restart worker`
 
-### Streamlit 화면이 표시되지 않음
-- **프런트엔드 로그**: `docker compose logs frontend`
-- **포트 확인**: `docker compose ps`, `netstat -tlnp | grep 8501`
+### 프런트엔드 화면이 표시되지 않음
+- **프런트엔드 로그**: `docker compose logs reflex`
+- **포트 확인**: `docker compose ps`, `netstat -tlnp | grep 3000`
 - **브라우저 개발자 도구에서 네트워크/콘솔 오류 확인**
 
 ## 🐢 성능 저하

@@ -38,18 +38,18 @@ BenchHub Plus가 Streamlit에서 **Reflex**로 프런트엔드를 마이그레�
 
 ```bash
 # Reflex 프런트엔드로 전체 스택 실행
-docker-compose -f docker-compose.reflex.yml up --build
+./scripts/deploy.sh development
 ```
 
 ### 로컬 개발 환경
 
 ```bash
 # 백엔드 실행
-python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8001 --reload
+python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Reflex 프런트엔드 실행
 cd apps/reflex_frontend
-reflex run --env dev --backend-host 0.0.0.0 --frontend-port 12000 --backend-port 12001
+API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
 
 # 워커 실행
 celery -A apps.worker.celery_app worker --loglevel=info
@@ -57,10 +57,9 @@ celery -A apps.worker.celery_app worker --loglevel=info
 
 ## 🌐 접속 정보
 
-- **Reflex 프런트엔드**: http://localhost:12000
-- **Streamlit 프런트엔드** (레거시): http://localhost:8502
-- **백엔드 API**: http://localhost:8001
-- **API 문서**: http://localhost:8001/docs
+- **Reflex 프런트엔드**: http://localhost:3000
+- **백엔드 API**: http://localhost:8000
+- **API 문서**: http://localhost:8000/docs
 
 ## 📱 새로운 인터페이스 특징
 
@@ -161,7 +160,8 @@ rx.box(
 #### 1. 포트 충돌
 ```bash
 # 포트 사용 확인
-lsof -i :12000
+lsof -i :3000
+lsof -i :8001
 
 # 프로세스 종료
 kill -9 <PID>

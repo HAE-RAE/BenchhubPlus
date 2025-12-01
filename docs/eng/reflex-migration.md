@@ -38,18 +38,18 @@ BenchHub Plus has migrated from Streamlit to **Reflex** for the frontend! This g
 
 ```bash
 # Run full stack with Reflex frontend
-docker-compose -f docker-compose.reflex.yml up --build
+./scripts/deploy.sh development
 ```
 
 ### Local Development Environment
 
 ```bash
 # Run backend
-python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8001 --reload
+python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Run Reflex frontend
 cd apps/reflex_frontend
-reflex run --env dev --backend-host 0.0.0.0 --frontend-port 12000 --backend-port 12001
+API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
 
 # Run worker
 celery -A apps.worker.celery_app worker --loglevel=info
@@ -57,10 +57,9 @@ celery -A apps.worker.celery_app worker --loglevel=info
 
 ## 🌐 Access Information
 
-- **Reflex Frontend**: http://localhost:12000
-- **Streamlit Frontend** (Legacy): http://localhost:8502
-- **Backend API**: http://localhost:8001
-- **API Documentation**: http://localhost:8001/docs
+- **Reflex Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8000
+- **API Documentation**: http://localhost:8000/docs
 
 ## 📱 New Interface Features
 
@@ -161,7 +160,8 @@ rx.box(
 #### 1. Port Conflicts
 ```bash
 # Check port usage
-lsof -i :12000
+lsof -i :3000
+lsof -i :8001
 
 # Kill process
 kill -9 <PID>

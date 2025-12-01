@@ -2,8 +2,8 @@ import reflex as rx
 
 config = rx.Config(
     app_name="reflex_frontend",
-    frontend_port=12007,
-    backend_port=12008,
+    frontend_port=3000,
+    backend_port=8001,
     plugins=[
         rx.plugins.SitemapPlugin(),
         rx.plugins.TailwindV4Plugin(),

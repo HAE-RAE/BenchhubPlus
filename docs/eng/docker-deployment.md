@@ -74,7 +74,7 @@ cp .env.example .env
 ```
 
 **Access Points:**
-- Frontend: http://localhost:8502
+- Frontend: http://localhost:3000
 - Backend API: http://localhost:8001
 - API Docs: http://localhost:8001/docs
 
@@ -86,8 +86,8 @@ cp .env.example .env
 ```
 
 **Access Points:**
-- Application: http://localhost (port 80)
-- API: http://localhost/api
+- Application: http://localhost (port 80 via Nginx) or http://localhost:3000
+- API: http://localhost/api or http://localhost:8000/api
 - Health Check: http://localhost/api/v1/health
 
 ## 🔧 Configuration
@@ -202,17 +202,19 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
 
-  frontend:
+  reflex:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
+      dockerfile: Dockerfile.reflex
     environment:
-      - BACKEND_URL=http://backend:8000
-      - DEBUG=${DEBUG:-true}
+      - API_BASE_URL=http://backend:8000
     ports:
-      - "8502:8501"
+      - "3000:3000"
     depends_on:
       - backend
+    volumes:
+      - ./apps/reflex_frontend:/app
+    command: ["reflex", "run", "--env", "dev", "--backend-host", "0.0.0.0", "--backend-port", "8001", "--frontend-host", "0.0.0.0", "--frontend-port", "3000", "--loglevel", "debug"]
     restart: unless-stopped
 
 volumes:
@@ -234,7 +236,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./nginx/ssl:/etc/nginx/ssl
     depends_on:
-      - frontend
+      - reflex
       - backend
     restart: unless-stopped
 
@@ -309,15 +311,21 @@ services:
     deploy:
       replicas: 3
 
-  frontend:
+  reflex:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
+      dockerfile: Dockerfile.reflex
     environment:
-      - BACKEND_URL=http://backend:8000
-      - DEBUG=false
+      - API_BASE_URL=http://backend:8000
+    ports:
+      - "3000:3000"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     restart: unless-stopped
 
 volumes:
@@ -394,34 +402,45 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 CMD ["celery", "-A", "apps.worker.celery_app", "worker", "--loglevel=info"]
 ```
 
-### Frontend Dockerfile
+### Frontend Dockerfile (Reflex)
 
 ```dockerfile
 FROM python:3.11-slim
 
+# Set working directory
 WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     gcc \
+    g++ \
+    curl \
+    nodejs \
+    npm \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
-COPY pyproject.toml .
-RUN pip install -e .
+COPY apps/reflex_frontend/requirements.txt ./requirements.txt
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY apps/ apps/
+COPY apps/reflex_frontend/ ./
 
-# Expose port
-EXPOSE 8501
+# Install Node.js dependencies and build frontend
+RUN reflex init --loglevel debug
+RUN reflex export --frontend-only --no-zip
+
+# Expose ports
+EXPOSE 3000 8001
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8501/_stcore/health || exit 1
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000 || exit 1
 
-# Run application
-CMD ["streamlit", "run", "apps/frontend/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Run Reflex
+CMD ["reflex", "run", "--env", "prod", "--backend-host", "0.0.0.0", "--backend-port", "8001", "--frontend-host", "0.0.0.0", "--frontend-port", "3000"]
 ```
 
 ## 🔄 Deployment Scripts
@@ -491,7 +510,7 @@ echo "✅ Deployment complete!"
 
 if [ "$ENVIRONMENT" = "development" ]; then
     echo "🌐 Access points:"
-    echo "  Frontend: http://localhost:8502"
+    echo "  Frontend: http://localhost:3000"
     echo "  Backend:  http://localhost:8001"
     echo "  API Docs: http://localhost:8001/docs"
 else
@@ -512,7 +531,7 @@ docker-compose logs -f
 # View specific service logs
 docker-compose logs -f backend
 docker-compose logs -f worker
-docker-compose logs -f frontend
+docker-compose logs -f reflex
 
 # View recent logs
 docker-compose logs --tail=100 backend
@@ -602,7 +621,8 @@ docker-compose up -d --scale backend=3
 ```bash
 # Check port usage
 sudo lsof -i :8001
-sudo lsof -i :8502
+sudo lsof -i :3000
+sudo lsof -i :8000
 
 # Kill conflicting processes
 sudo kill -9 <PID>

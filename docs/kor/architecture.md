@@ -14,10 +14,10 @@ Streamlit 프런트엔드 ⇄ FastAPI 백엔드 ⇄ Celery 워커
 
 ## 주요 계층
 
-### 프런트엔드 (Streamlit)
-- 파일: `apps/frontend/streamlit_app.py`, `components/`
+### 프런트엔드 (Reflex)
+- 파일: `apps/reflex_frontend/rxconfig.py`, `apps/reflex_frontend/reflex_frontend/`
 - 역할: 사용자 입력 수집, 상태 시각화, API 호출
-- 기술: Streamlit, Plotly, Requests
+- 기술: Reflex, Tailwind, httpx
 
 ### 백엔드 (FastAPI)
 - 파일: `apps/backend/main.py`, `routers/`, `services/`, `repositories/`

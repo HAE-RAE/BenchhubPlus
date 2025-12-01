@@ -10,7 +10,7 @@ BenchHub Plus is made of several services that communicate with each other:
 
 | Component | Purpose | Default dev port |
 |-----------|---------|------------------|
-| Streamlit Frontend | Web interface for creating and browsing evaluations | `8502` |
+| Reflex Frontend | Web interface for creating and browsing evaluations | `3000` |
 | FastAPI Backend | REST API that orchestrates evaluations | `8001` |
 | Celery Worker | Executes evaluation jobs in the background | – |
 | PostgreSQL | Stores evaluation plans and results | `5433` |
@@ -97,7 +97,7 @@ If the curl command returns JSON that includes `"status": "healthy"`, the backen
 
 ## 🕹️ Step 5 – Open the web app
 
-Visit **http://localhost:8502** in your browser. You should land on the "Evaluate" tab where you can submit your first natural-language evaluation request. The [User Manual](./user-manual.md) explains each field in detail.
+Visit **http://localhost:3000** in your browser. You should land on the "Evaluate" tab where you can submit your first natural-language evaluation request. The [User Manual](./user-manual.md) explains each field in detail.
 
 ---
 
@@ -133,8 +133,9 @@ python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 # Terminal 2 – Celery worker
 celery -A apps.worker.celery_app worker --loglevel=info
 
-# Terminal 3 – Streamlit frontend
-streamlit run apps/frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+# Terminal 3 – Reflex frontend
+cd apps/reflex_frontend
+API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
 ```
 
 For this mode you must provide your own PostgreSQL and Redis instances that match the connection details in `.env` (or switch to SQLite/Redis alternatives).

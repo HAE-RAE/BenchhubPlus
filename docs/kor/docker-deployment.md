@@ -38,7 +38,7 @@ cd BenchhubPlus
 cp .env.example .env  # 환경 변수 입력
 ./scripts/deploy.sh development
 ```
-- 프런트엔드: http://localhost:8502
+- 프런트엔드: http://localhost:3000
 - 백엔드 API: http://localhost:8001
 - API 문서: http://localhost:8001/docs
 
@@ -46,7 +46,7 @@ cp .env.example .env  # 환경 변수 입력
 ```bash
 ./scripts/deploy.sh production
 ```
-- 애플리케이션: http://localhost
+- 애플리케이션: http://localhost (또는 http://localhost:3000 직접 접근)
 - API: http://localhost/api
 - 헬스 체크: http://localhost/api/v1/health
 

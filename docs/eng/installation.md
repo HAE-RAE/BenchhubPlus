@@ -40,7 +40,7 @@ cp .env.example .env
 ```
 
 Access the application:
-- Frontend: http://localhost:8502
+- Frontend: http://localhost:3000
 - Backend API: http://localhost:8001
 - API Docs: http://localhost:8001/docs
 
@@ -214,7 +214,7 @@ After installation, verify everything is working:
 
 ```bash
 # API Health Check
-curl http://localhost:8000/api/v1/health
+curl http://localhost:8001/api/v1/health   # use 8000 for production compose
 
 # Expected response:
 # {"status": "healthy", "database_status": "connected", "redis_status": "connected"}
@@ -222,7 +222,7 @@ curl http://localhost:8000/api/v1/health
 
 ### 2. Access Web Interface
 
-Open http://localhost:8501 (or 8502 for development) and verify:
+Open http://localhost:3000 and verify:
 - ✅ Page loads without errors
 - ✅ Can navigate between tabs
 - ✅ System status shows all services healthy

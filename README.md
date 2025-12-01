@@ -38,7 +38,7 @@ An interactive leaderboard system for dynamic LLM evaluation that converts natur
 
 ## ✨ What's New: Reflex Frontend
 
-We've migrated from Streamlit to **Reflex** for a modern, production-ready web experience! 
+We've migrated fully from Streamlit to **Reflex** for a modern, production-ready web experience! 
 
 ### 🆕 Reflex Benefits
 - **Modern UI/UX**: Clean, responsive design with Tailwind CSS
@@ -47,8 +47,8 @@ We've migrated from Streamlit to **Reflex** for a modern, production-ready web e
 - **Component Architecture**: Maintainable and extensible codebase
 
 ### 🔄 Migration Status
-- ✅ **Reflex Frontend**: Full-featured modern interface (recommended)
-- 🔧 **Streamlit Frontend**: Legacy support maintained for compatibility
+- ✅ **Reflex Frontend**: Default experience shipped in this repository
+- 🗑️ **Streamlit Frontend**: Removed in favor of Reflex
 
 ## 🚀 Quick Start
 
@@ -75,20 +75,18 @@ We've migrated from Streamlit to **Reflex** for a modern, production-ready web e
 4. **Launch the full stack**
 
    ```bash
-   # Option 1: Streamlit frontend (legacy)
-   ./scripts/deploy.sh development
-   
-   # Option 2: Reflex frontend (modern, recommended)
-   docker-compose -f docker-compose.reflex.yml up --build
+   ./scripts/deploy.sh development   # local dev with live reload mounts
+   # or for a slimmer, prod-like run:
+   ./scripts/deploy.sh
    ```
 
    The helper script builds the images, starts the services, and waits for them to report healthy.
 
 5. **Open the application**
-   - Frontend UI: http://localhost:8502 (Streamlit) or http://localhost:12000 (Reflex)
-   - Backend API: http://localhost:8001
-   - API documentation: http://localhost:8001/docs
-   - Flower (Celery dashboard): http://localhost:5556
+   - Frontend UI (Reflex): http://localhost:3000
+   - Backend API: http://localhost:8001 (dev) or http://localhost:8000 (prod)
+   - API documentation: http://localhost:8001/docs (dev) or http://localhost:8000/docs (prod)
+   - Flower (Celery dashboard): http://localhost:5556 (dev) or http://localhost:5555 (prod)
 
 6. **Verify everything is running**
 
@@ -111,12 +109,9 @@ For contributors who prefer not to use Docker:
 source venv/bin/activate
 python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Choose your frontend:
-# Option 1: Streamlit (legacy)
-streamlit run apps/frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
-
-# Option 2: Reflex (modern, recommended)
-cd apps/reflex_frontend && reflex run --env dev --backend-host 0.0.0.0 --frontend-port 12000
+# Reflex frontend
+cd apps/reflex_frontend
+API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
 
 # Background worker
 celery -A apps.worker.celery_app worker --loglevel=info
@@ -178,7 +173,6 @@ You will also need local PostgreSQL and Redis instances that match the connectio
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │     Reflex      │    │   FastAPI       │    │   Celery        │
 │   Frontend      │◄──►│   Backend       │◄──►│   Workers       │
-│  (+ Streamlit)  │    │                 │    │                 │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
          │                       ▼                       ▼
@@ -223,8 +217,7 @@ Documentation is available in both **English** (`docs/eng`) and **한국어** (`
 - **Pydantic**: Data validation and serialization
 
 ### Frontend
-- **Reflex**: Modern Python web framework (recommended)
-- **Streamlit**: Interactive web application framework (legacy support)
+- **Reflex**: Modern Python web framework
 - **Plotly**: Interactive data visualizations
 - **Pandas**: Data manipulation and analysis
 

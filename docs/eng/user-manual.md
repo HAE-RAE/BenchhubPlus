@@ -8,8 +8,8 @@ This manual explains how to operate BenchHub Plus after you have started the sta
 
 BenchHub Plus does not require user accounts. Once the services are running, open your browser and go to the frontend URL:
 
-- **Development (docker-compose.dev.yml)**: http://localhost:8502
-- **Production (docker-compose.yml)**: http://localhost:8501
+- **Development (docker-compose.dev.yml)**: http://localhost:3000
+- **Production (docker-compose.yml)**: http://localhost:3000 (or via Nginx on http://localhost)
 
 You should see the BenchHub Plus header and a horizontal navigation menu with four tabs: **Evaluate**, **Status**, **Browse**, and **System**.
 

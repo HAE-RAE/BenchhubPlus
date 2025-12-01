@@ -41,6 +41,7 @@ pip install --upgrade pip
 # Install dependencies
 echo -e "${YELLOW}📦 Installing dependencies...${NC}"
 pip install -e .
+pip install -r apps/reflex_frontend/requirements.txt
 
 # Create directories
 echo -e "${YELLOW}📁 Creating directories...${NC}"
@@ -155,9 +156,12 @@ EOF
 # Frontend development script
 cat > scripts/dev-frontend.sh << 'EOF'
 #!/bin/bash
+cd "$(dirname "$0")/.."
 source venv/bin/activate
 export PYTHONPATH=$PWD:$PYTHONPATH
-streamlit run apps/frontend/streamlit_app.py --server.port=8501
+export API_BASE_URL=${API_BASE_URL:-http://localhost:8000}
+cd apps/reflex_frontend
+reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000 --loglevel debug
 EOF
 
 # Make scripts executable
@@ -219,13 +223,13 @@ cat > QUICKSTART.md << 'EOF'
    ```
 
 4. **Access services:**
-   - Frontend: http://localhost:8501
+   - Frontend (Reflex): http://localhost:3000
    - Backend API: http://localhost:8000
    - API Docs: http://localhost:8000/docs
 
 ## Usage
 
-1. Open the frontend at http://localhost:8501
+1. Open the frontend at http://localhost:3000
 2. Enter a natural language query (e.g., "Compare these models on math problems")
 3. Configure your models with API keys
 4. Start evaluation and monitor progress
@@ -248,6 +252,6 @@ echo -e "${GREEN}🎉 Setup completed successfully!${NC}"
 echo -e "${BLUE}📋 Next steps:${NC}"
 echo -e "  1. Edit .env file with your configuration"
 echo -e "  2. Run: ${GREEN}./scripts/deploy.sh development${NC}"
-echo -e "  3. Open: ${GREEN}http://localhost:8502${NC}"
+echo -e "  3. Open: ${GREEN}http://localhost:3000${NC}"
 echo -e ""
 echo -e "${BLUE}📖 See QUICKSTART.md for detailed instructions${NC}"

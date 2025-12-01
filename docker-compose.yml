@@ -88,18 +88,23 @@ services:
       - /tmp:/tmp  # For temporary files during evaluation
     restart: unless-stopped
 
-  # Streamlit Frontend
-  frontend:
+  # Reflex Frontend
+  reflex:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
-    container_name: benchhub_frontend
+      dockerfile: Dockerfile.reflex
+    container_name: benchhub_reflex
     environment:
       - API_BASE_URL=http://backend:8000
     ports:
-      - "8501:8501"
+      - "3000:3000"
     depends_on:
       - backend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     restart: unless-stopped
 
   # Celery Flower (Optional - for monitoring)
@@ -127,7 +132,7 @@ services:
       - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       - backend
-      - frontend
+      - reflex
     restart: unless-stopped
 
 volumes:
