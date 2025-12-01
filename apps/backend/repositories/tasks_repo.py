@@ -123,21 +123,40 @@ class TasksRepository:
             .all()
         )
     
-    def cleanup_old_tasks(self, days_old: int = 7) -> int:
+    def cleanup_old_tasks(
+        self,
+        days_old: int = 7,
+        limit: Optional[int] = None,
+        dry_run: bool = False
+    ) -> int:
         """Clean up old completed tasks."""
         cutoff_time = datetime.utcnow() - timedelta(days=days_old)
-        
-        count = self.db.query(EvaluationTask).filter(
+
+        base_query = self.db.query(EvaluationTask).filter(
             EvaluationTask.status.in_(["SUCCESS", "FAILURE"]),
             EvaluationTask.completed_at < cutoff_time
-        ).count()
-        
-        self.db.query(EvaluationTask).filter(
-            EvaluationTask.status.in_(["SUCCESS", "FAILURE"]),
-            EvaluationTask.completed_at < cutoff_time
-        ).delete()
-        
-        self.db.commit()
+        )
+
+        if limit:
+            ids = [
+                row.task_id
+                for row in base_query.with_entities(EvaluationTask.task_id).limit(limit).all()
+            ]
+            count = len(ids)
+            if not dry_run and ids:
+                (
+                    self.db.query(EvaluationTask)
+                    .filter(EvaluationTask.task_id.in_(ids))
+                    .delete(synchronize_session=False)
+                )
+        else:
+            count = base_query.count()
+            if not dry_run and count:
+                base_query.delete(synchronize_session=False)
+
+        if not dry_run:
+            self.db.commit()
+
         return count
     
     def get_task_stats(self) -> dict:

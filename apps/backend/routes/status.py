@@ -9,19 +9,52 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Request, status, Re
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from pydantic import BaseModel, Field, validator
+from celery import states
 
 from ...core.db import get_db
-from ...core.schemas import TaskStatus, HealthResponse, TaskActionRequest, TaskDetailResponse
+from ...core.schemas import (
+    TaskStatus,
+    HealthResponse,
+    TaskActionRequest,
+    TaskDetailResponse,
+    CleanupTaskStatus,
+    CleanupProgress,
+)
 from ..repositories.tasks_repo import TasksRepository
 from ..services.audit import AuditService
 from ..services.orchestrator import EvaluationOrchestrator
 from ..dependencies import require_admin, get_optional_user, get_current_user
 from ...worker.celery_app import celery_app
-from ...worker.tasks import run_evaluation
+from ...worker.tasks import run_evaluation, cleanup_task
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["status"])
+
+
+CLEANUP_ALLOWED_RESOURCES = {"tasks", "samples", "cache"}
+
+
+class CleanupRequest(BaseModel):
+    """Request payload for maintenance cleanup."""
+
+    resources: List[str] = Field(
+        default_factory=lambda: ["tasks", "samples", "cache"],
+        description="List of resources to clean: tasks, samples, cache",
+    )
+    days_old: int = Field(7, ge=1, description="Remove data older than N days")
+    limit: int = Field(500, ge=1, le=10000, description="Maximum records per resource to delete")
+    dry_run: bool = Field(False, description="Report counts without deleting")
+    hard_delete: bool = Field(False, description="Hard delete cache (otherwise quarantine)")
+
+    @validator("resources")
+    def validate_resources(cls, value: List[str]) -> List[str]:
+        """Ensure resources are allowed."""
+        filtered = [res for res in value if res in CLEANUP_ALLOWED_RESOURCES]
+        if not filtered:
+            raise ValueError(f"resources must include one of {sorted(CLEANUP_ALLOWED_RESOURCES)}")
+        return filtered
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
@@ -333,24 +366,106 @@ async def get_system_stats(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.post("/maintenance/cleanup")
-async def cleanup_old_data(
-    days_old: int = 7,
-    db: Session = Depends(get_db)
+@router.post(
+    "/maintenance/cleanup",
+    response_model=CleanupTaskStatus,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_admin)],
+)
+async def schedule_cleanup(
+    payload: CleanupRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_admin),
 ):
-    """Clean up old tasks and data."""
-    
+    """Schedule cleanup as an async task (202)."""
+
     try:
-        repo = TasksRepository(db)
-        cleaned_tasks = repo.cleanup_old_tasks(days_old)
-        
-        # TODO: Add cleanup for other data types if needed
-        
-        return {
-            "message": f"Cleanup completed",
-            "cleaned_tasks": cleaned_tasks
-        }
-        
+        async_result = cleanup_task.delay(
+            days_old=payload.days_old,
+            resources=payload.resources,
+            dry_run=payload.dry_run,
+            limit=payload.limit,
+            hard_delete=payload.hard_delete,
+        )
+
+        AuditService(db).log_action(
+            action="maintenance.cleanup.schedule",
+            resource="maintenance",
+            resource_id=getattr(async_result, "id", None),
+            user_id=getattr(current_user, "id", None),
+            metadata=payload.model_dump(),
+        )
+
+        progress = CleanupProgress(
+            current=0,
+            total=len(payload.resources),
+            stage="queued",
+            eta_seconds=None,
+        )
+
+        return CleanupTaskStatus(
+            task_id=getattr(async_result, "id", ""),
+            status="PENDING",
+            progress=progress,
+            resources={},
+            summary={"dry_run": payload.dry_run},
+            params=payload.model_dump(),
+            dry_run=payload.dry_run,
+        )
     except Exception as e:
-        logger.error(f"Failed to cleanup old data: {e}")
+        logger.error(f"Failed to schedule cleanup: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get(
+    "/maintenance/cleanup/{task_id}",
+    response_model=CleanupTaskStatus,
+    dependencies=[Depends(require_admin)],
+)
+async def get_cleanup_status(
+    task_id: str,
+    db: Session = Depends(get_db),
+):
+    """Get status/result of a cleanup task."""
+
+    try:
+        async_result = celery_app.AsyncResult(task_id)
+        info = async_result.info or {}
+        if not isinstance(info, dict):
+            info = {"last_error": str(info) if info else None}
+
+        if async_result.state == states.SUCCESS:
+            task_status = info.get("status", "SUCCESS")
+        elif async_result.state in (states.STARTED, states.RETRY, "PROGRESS"):
+            task_status = "RUNNING"
+        elif async_result.state == states.FAILURE:
+            task_status = "FAILED"
+        elif async_result.state == states.REVOKED:
+            task_status = "CANCELLED"
+        else:
+            task_status = "PENDING"
+
+        progress_payload = info.get("progress")
+        progress = None
+        if progress_payload:
+            progress = CleanupProgress(**progress_payload)
+
+        last_error = info.get("last_error")
+        if async_result.state == states.FAILURE and not last_error:
+            last_error = str(async_result.result)
+
+        return CleanupTaskStatus(
+            task_id=task_id,
+            status=task_status,
+            progress=progress,
+            resources=info.get("resources"),
+            summary=info.get("summary"),
+            params=info.get("params"),
+            dry_run=info.get("summary", {}).get("dry_run") if info else None,
+            started_at=info.get("started_at"),
+            completed_at=info.get("completed_at"),
+            last_error=last_error if task_status in ("FAILED", "PARTIAL") else None,
+        )
+    except Exception as e:
+        logger.error(f"Failed to fetch cleanup status {task_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

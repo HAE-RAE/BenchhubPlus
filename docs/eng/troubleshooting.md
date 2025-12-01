@@ -533,6 +533,21 @@ Evaluation should start successfully
    docker-compose exec redis redis-cli --scan --pattern "cache:*" | xargs docker-compose exec redis redis-cli del
    ```
 
+4. **API-driven cleanup (BenchHub Plus)**:
+   ```bash
+   # Schedule cleanup (admin only) - defaults: tasks/samples/cache, days_old=7, dry_run=true recommended first
+   curl -X POST http://localhost:8001/api/v1/maintenance/cleanup \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <admin_token>" \
+     -d '{"dry_run": true, "resources": ["tasks","samples","cache"], "days_old": 7, "limit": 500, "hard_delete": false}'
+
+   # Check status/progress
+   curl http://localhost:8001/api/v1/maintenance/cleanup/<task_id> \
+     -H "Authorization: Bearer <admin_token>"
+   ```
+   - `status` returns `PENDING|RUNNING|PARTIAL|SUCCESS|FAILED`, with per-resource `{deleted, skipped, errors, duration_ms}` and `progress{current,total,stage,eta_seconds}`.
+   - Use `dry_run=true` to inspect impact before real deletion. Set `hard_delete=true` to physically remove cache rows; otherwise they are quarantined.
+
 4. **Update dependencies**:
    ```bash
    pip list --outdated
