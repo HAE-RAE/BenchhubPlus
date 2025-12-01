@@ -36,9 +36,9 @@ class Settings(BaseSettings):
     
     # Frontend Configuration
     frontend_host: str = Field(default="0.0.0.0", description="Frontend host")
-    frontend_port: int = Field(default=8501, description="Frontend port")
+    frontend_port: int = Field(default=3000, description="Frontend port")
     frontend_url: str = Field(
-        default="http://localhost:8502",
+        default="http://localhost:3000",
         description="Frontend URL for browser redirects"
     )
     
