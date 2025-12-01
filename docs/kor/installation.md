@@ -19,7 +19,7 @@ cd BenchhubPlus
 cp .env.example .env  # API 키 입력
 ./scripts/deploy.sh development
 ```
-- 프런트엔드: http://localhost:8502
+- 프런트엔드: http://localhost:3000
 - 백엔드 API: http://localhost:8001
 - API Docs: http://localhost:8001/docs
 

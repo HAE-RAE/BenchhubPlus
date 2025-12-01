@@ -13,7 +13,8 @@ Welcome to BenchHub Plus - an interactive leaderboard system for dynamic LLM eva
 ### User Guides
 - [User Manual](user-manual.md) - Complete user guide
 - [API Reference](api-reference.md) - REST API documentation
-- [Frontend Guide](frontend-guide.md) - Using the Streamlit interface
+- [Reflex Migration Guide](reflex-migration.md) - **New Reflex frontend usage guide**
+- [Frontend Guide](frontend-guide.md) - Using the Streamlit interface (legacy)
 
 ### Development
 - [Development Guide](development.md) - Development setup and guidelines

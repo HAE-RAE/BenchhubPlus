@@ -197,5 +197,11 @@ Thumbs.db
 # Streamlit
 .streamlit/
 
+# Reflex
+.web/
+node_modules/
+*.log
+.reflex/
+
 # 원시 벤치마크 데이터 파일 제외
 *.jsonl

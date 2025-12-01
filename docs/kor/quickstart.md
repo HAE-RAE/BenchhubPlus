@@ -10,7 +10,7 @@ BenchHub Plus는 여러 서비스가 상호 통신하며 동작합니다.
 
 | 구성 요소 | 역할 | 기본 개발 포트 |
 |-----------|------|----------------|
-| Streamlit 프런트엔드 | 평가 생성/결과 열람을 위한 웹 UI | `8502` |
+| Reflex 프런트엔드 | 평가 생성/결과 열람을 위한 웹 UI | `3000` |
 | FastAPI 백엔드 | 평가 계획 생성과 작업 오케스트레이션 | `8001` |
 | Celery 워커 | 백그라운드에서 평가 작업 실행 | – |
 | PostgreSQL | 평가 계획 및 결과 저장소 | `5433` |
@@ -95,7 +95,7 @@ curl http://localhost:8001/api/v1/health
 
 ## 🕹️ 5단계 – 웹 앱 열기
 
-브라우저에서 **http://localhost:8502** 로 이동합니다. 기본 탭은 **Evaluate**이며, [사용자 매뉴얼](./user-manual.md)에서 각 입력 항목을 자세히 설명합니다.
+브라우저에서 **http://localhost:3000** 으로 이동합니다. 기본 탭은 **Evaluate**이며, [사용자 매뉴얼](./user-manual.md)에서 각 입력 항목을 자세히 설명합니다.
 
 ---
 
@@ -131,8 +131,9 @@ python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 # 터미널 2 – Celery 워커
 celery -A apps.worker.celery_app worker --loglevel=info
 
-# 터미널 3 – Streamlit 프런트엔드
-streamlit run apps/frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+# 터미널 3 – Reflex 프런트엔드
+cd apps/reflex_frontend
+API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
 ```
 
 이 방식에서는 `.env`에 정의된 연결 정보에 맞는 PostgreSQL과 Redis 인스턴스를 직접 마련해야 합니다.

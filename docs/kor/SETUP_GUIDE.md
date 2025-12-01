@@ -24,9 +24,9 @@ OPENAI_API_KEY=your_openai_api_key_here
 DEFAULT_MODEL=gpt-3.5-turbo
 
 # 서비스 포트
-API_BASE_URL=http://localhost:12000
-FRONTEND_PORT=12001
-BACKEND_PORT=12000
+API_BASE_URL=http://localhost:8000
+FRONTEND_PORT=3000
+BACKEND_PORT=8000
 REDIS_PORT=6379
 
 # 데이터베이스
@@ -39,8 +39,8 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 
 ### 3. 의존성 설치
 ```bash
-pip install -r requirements.txt
-pip install streamlit-option-menu
+pip install -e .
+pip install -r apps/reflex_frontend/requirements.txt
 ```
 
 ### 4. Redis 서버 설치 및 실행
@@ -75,23 +75,24 @@ mkdir -p logs
 
 1. **백엔드 (FastAPI)**
    ```bash
-   python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 12000 --reload
+   python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
    ```
-2. **프런트엔드 (Streamlit)**
+2. **프런트엔드 (Reflex)**
    ```bash
-   streamlit run apps/frontend/streamlit_app.py --server.port 12001 --server.address 0.0.0.0
+   cd apps/reflex_frontend
+   API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
    ```
 3. **Celery 워커**
    ```bash
-   celery -A apps.backend.celery_app worker --loglevel=info --concurrency=4
+   celery -A apps.worker.celery_app worker --loglevel=info --concurrency=4
    ```
 
 ### 7. 설치 확인
 - **백엔드 헬스 체크**
   ```bash
-  curl http://localhost:12000/api/v1/health
+  curl http://localhost:8000/api/v1/health
   ```
-- **프런트엔드 접속**: http://localhost:12001
+- **프런트엔드 접속**: http://localhost:3000
 - **Redis 상태**
   ```bash
   redis-cli ping
@@ -100,12 +101,12 @@ mkdir -p logs
 ## 서비스 구조
 BenchHub Plus는 다음 네 가지 핵심 구성요소로 이루어져 있습니다.
 
-1. **백엔드 API (FastAPI)** - 포트 12000
+1. **백엔드 API (FastAPI)** - 포트 8000
    - API 요청 처리
    - 데이터베이스 작업 수행
    - 평가 작업 오케스트레이션
 
-2. **프런트엔드 UI (Streamlit)** - 포트 12001
+2. **프런트엔드 UI (Reflex)** - 포트 3000
    - 평가 요청 입력
    - 실시간 상태 모니터링
    - 결과 시각화 제공

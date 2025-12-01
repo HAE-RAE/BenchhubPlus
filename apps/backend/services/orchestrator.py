@@ -45,7 +45,7 @@ class EvaluationOrchestrator:
         except Exception as e:
             logger.warning(f"Failed to initialize planner agent: {e}")
     
-    def generate_leaderboard(self, query: LeaderboardQuery) -> TaskResponse:
+    def generate_leaderboard(self, query: LeaderboardQuery, user_id: Optional[int] = None) -> TaskResponse:
         """Generate leaderboard for given query and models."""
         
         # Validate input
@@ -86,7 +86,13 @@ class EvaluationOrchestrator:
                 logger.info(f"Cache hit for query: {query.query}")
                 
                 # Create a "completed" task with cached results
-                task = self.tasks_repo.create_task(task_id, plan_details)
+                task = self.tasks_repo.create_task(
+                    task_id,
+                    plan_details,
+                    user_id=user_id,
+                    request_payload=query.model_dump_json(),
+                    model_count=len(query.models),
+                )
                 self.tasks_repo.update_task_status(
                     task_id, 
                     "SUCCESS", 
@@ -100,7 +106,13 @@ class EvaluationOrchestrator:
                 )
             
             # Cache miss - create evaluation task
-            task = self.tasks_repo.create_task(task_id, plan_details)
+            task = self.tasks_repo.create_task(
+                task_id,
+                plan_details,
+                user_id=user_id,
+                request_payload=query.model_dump_json(),
+                model_count=len(query.models),
+            )
 
             try:
                 from ...worker.tasks import run_evaluation
@@ -346,7 +358,8 @@ class EvaluationOrchestrator:
         language: Optional[str] = None,
         subject_type: Optional[str] = None,
         task_type: Optional[str] = None,
-        limit: int = 100
+        limit: int = 100,
+        include_quarantined: bool = False,
     ) -> LeaderboardResponse:
         """Get leaderboard by specific criteria."""
         
@@ -354,17 +367,20 @@ class EvaluationOrchestrator:
             language=language,
             subject_type=subject_type,
             task_type=task_type,
-            limit=limit
+            limit=limit,
+            include_quarantined=include_quarantined,
         )
         
         leaderboard_entries = [
             LeaderboardEntry(
+                id=entry.id,
                 model_name=entry.model_name,
                 language=entry.language,
                 subject_type=entry.subject_type,
                 task_type=entry.task_type,
                 score=entry.score,
-                last_updated=entry.last_updated
+                last_updated=entry.last_updated,
+                quarantined=entry.quarantined,
             )
             for entry in entries
         ]
@@ -448,6 +464,12 @@ class EvaluationOrchestrator:
             task_type or "전체 태스크"
         ]
         plan_summary = " · ".join(summary_parts) + " 기준으로 추천 필터를 설정했어요."
+        confidence = 0.7 if used_planner else 0.4
+        rationale = (
+            "Planner agent parsed query successfully"
+            if used_planner
+            else "Falling back to default configuration"
+        )
         
         metadata: Dict[str, Any] = {
             "plan_config": plan_config.dict(),
@@ -462,6 +484,8 @@ class EvaluationOrchestrator:
             subject_type_options=subject_options,
             plan_summary=plan_summary,
             used_planner=used_planner,
+            confidence=confidence,
+            rationale=rationale,
             metadata=metadata
         )
     

@@ -91,9 +91,10 @@ BenchhubPlus/
 │   │   ├── routers/              # API route handlers
 │   │   ├── services/             # Business logic layer
 │   │   └── repositories/         # Data access layer
-│   ├── frontend/                 # Streamlit frontend
-│   │   ├── streamlit_app.py      # Main Streamlit app
-│   │   └── components/           # UI components
+│   ├── reflex_frontend/          # Reflex frontend
+│   │   ├── reflex_frontend/      # UI components and pages
+│   │   ├── assets/               # Static assets
+│   │   └── rxconfig.py           # Reflex configuration
 │   ├── worker/                   # Celery workers
 │   │   ├── celery_app.py         # Celery configuration
 │   │   ├── tasks/                # Async task definitions
@@ -345,26 +346,51 @@ class NewFeatureRepository:
 ### 6. Frontend Component
 
 ```python
-# apps/frontend/components/new_feature.py
-import streamlit as st
+# apps/reflex_frontend/reflex_frontend/new_feature.py
+import httpx
+import reflex as rx
+
+API_BASE = "http://localhost:8000"
+
+
+class NewFeatureState(rx.State):
+    name: str = ""
+    value: str = "0"
+
+    async def create_feature(self):
+        try:
+            payload = {"name": self.name, "value": float(self.value)}
+        except ValueError:
+            return rx.toast.error("Enter a valid number")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                f"{API_BASE}/api/v1/new-feature/",
+                json=payload,
+            )
+        if response.status_code == 200:
+            return rx.toast.success("Feature created successfully!")
+        return rx.toast.error("Failed to create feature")
+
 
 def render_new_feature_form():
-    st.subheader("New Feature")
-    
-    name = st.text_input("Feature Name")
-    value = st.number_input("Feature Value", min_value=0.0)
-    
-    if st.button("Create Feature"):
-        # Call API
-        response = requests.post("/api/v1/new-feature/", json={
-            "name": name,
-            "value": value
-        })
-        
-        if response.status_code == 200:
-            st.success("Feature created successfully!")
-        else:
-            st.error("Failed to create feature")
+    return rx.vstack(
+        rx.heading("New Feature"),
+        rx.input(
+            placeholder="Feature Name",
+            on_change=NewFeatureState.set_name,
+        ),
+        rx.input(
+            placeholder="Feature Value",
+            type_="number",
+            on_change=NewFeatureState.set_value,
+        ),
+        rx.button(
+            "Create Feature",
+            on_click=NewFeatureState.create_feature,
+        ),
+        spacing="3",
+    )
 ```
 
 ## 🔄 Async Task Development
@@ -639,7 +665,7 @@ export LOG_LEVEL="info"
 # Build images
 docker build -f Dockerfile.backend -t benchhub-backend .
 docker build -f Dockerfile.worker -t benchhub-worker .
-docker build -f Dockerfile.frontend -t benchhub-frontend .
+docker build -f Dockerfile.reflex -t benchhub-frontend .
 
 # Run with docker-compose
 docker-compose up -d

@@ -28,9 +28,9 @@ OPENAI_API_KEY=your_openai_api_key_here
 DEFAULT_MODEL=gpt-3.5-turbo
 
 # Service Ports
-API_BASE_URL=http://localhost:12000
-FRONTEND_PORT=12001
-BACKEND_PORT=12000
+API_BASE_URL=http://localhost:8000
+FRONTEND_PORT=3000
+BACKEND_PORT=8000
 REDIS_PORT=6379
 
 # Database
@@ -46,13 +46,8 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 Install Python dependencies:
 
 ```bash
-pip install -r requirements.txt
-```
-
-Install additional required packages:
-
-```bash
-pip install streamlit-option-menu
+pip install -e .
+pip install -r apps/reflex_frontend/requirements.txt
 ```
 
 ### 4. Install and Start Redis Server
@@ -153,31 +148,31 @@ You need to start multiple services. Open separate terminal windows/tabs for eac
 #### Terminal 1: Backend Server
 ```bash
 cd BenchhubPlus
-python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 12000 --reload
+python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-#### Terminal 2: Frontend (Streamlit)
+#### Terminal 2: Frontend (Reflex)
 ```bash
-cd BenchhubPlus
-streamlit run apps/frontend/streamlit_app.py --server.port 12001 --server.address 0.0.0.0
+cd BenchhubPlus/apps/reflex_frontend
+API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
 ```
 
 #### Terminal 3: Celery Worker
 ```bash
 cd BenchhubPlus
-celery -A apps.backend.celery_app worker --loglevel=info --concurrency=4
+celery -A apps.worker.celery_app worker --loglevel=info --concurrency=4
 ```
 
 ### 7. Verify Installation
 
 1. **Backend Health Check:**
    ```bash
-   curl http://localhost:12000/api/v1/health
+   curl http://localhost:8000/api/v1/health
    ```
    Should return: `{"status":"healthy","timestamp":"...","version":"2.0.0","database_status":"connected","redis_status":"connected"}`
 
 2. **Frontend Access:**
-   Open your browser and navigate to: `http://localhost:12001`
+   Open your browser and navigate to: `http://localhost:3000`
 
 3. **Redis Status:**
    ```bash
@@ -188,12 +183,12 @@ celery -A apps.backend.celery_app worker --loglevel=info --concurrency=4
 
 The BenchHub Plus application consists of four main components:
 
-1. **Backend API (FastAPI)** - Port 12000
+1. **Backend API (FastAPI)** - Port 8000
    - Handles API requests
    - Manages database operations
    - Coordinates evaluation tasks
 
-2. **Frontend UI (Streamlit)** - Port 12001
+2. **Frontend UI (Reflex)** - Port 3000
    - User interface for evaluation requests
    - Real-time status monitoring
    - Results visualization
@@ -233,11 +228,11 @@ python -c "from apps.backend.database import engine, Base; from apps.backend.mod
 
 #### 3. Missing Dependencies
 ```
-ModuleNotFoundError: No module named 'streamlit_option_menu'
+ModuleNotFoundError: No module named 'reflex'
 ```
-**Solution:** Install missing packages:
+**Solution:** Install the frontend requirements:
 ```bash
-pip install streamlit-option-menu
+pip install -r apps/reflex_frontend/requirements.txt
 ```
 
 #### 4. Port Already in Use
@@ -246,8 +241,9 @@ OSError: [Errno 98] Address already in use
 ```
 **Solution:** Kill existing processes or use different ports:
 ```bash
-# Find and kill process using port 12000
-lsof -ti:12000 | xargs kill -9
+# Find and kill process using port 8000 (backend) or 3000 (frontend)
+lsof -ti:8000 | xargs kill -9
+lsof -ti:3000 | xargs kill -9
 
 # Or change ports in .env file
 ```
@@ -276,7 +272,7 @@ fi
 
 # Check Backend
 echo -n "Backend: "
-if curl -s http://localhost:12000/api/v1/health > /dev/null 2>&1; then
+if curl -s http://localhost:8000/api/v1/health > /dev/null 2>&1; then
     echo "✅ Running"
 else
     echo "❌ Not running"
@@ -284,7 +280,7 @@ fi
 
 # Check Frontend
 echo -n "Frontend: "
-if curl -s http://localhost:12001 > /dev/null 2>&1; then
+if curl -s http://localhost:3000 > /dev/null 2>&1; then
     echo "✅ Running"
 else
     echo "❌ Not running"
@@ -305,10 +301,11 @@ For development, you can use the `--reload` flag for auto-reloading:
 
 ```bash
 # Backend with auto-reload
-python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 12000 --reload
+python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Streamlit with auto-reload (default behavior)
-streamlit run apps/frontend/streamlit_app.py --server.port 12001
+# Reflex with auto-reload
+cd apps/reflex_frontend
+API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
 ```
 
 ## Production Deployment

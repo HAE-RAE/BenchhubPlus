@@ -5,7 +5,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
 
-An interactive leaderboard system for dynamic LLM evaluation that converts natural language queries to customized model rankings using FastAPI backend, Streamlit frontend, Celery workers, and HRET integration.
+An interactive leaderboard system for dynamic LLM evaluation that converts natural language queries to customized model rankings using FastAPI backend, modern Reflex frontend, Celery workers, and HRET integration.
 
 <img width="1919" height="962" alt="benchhubplus" src="https://github.com/user-attachments/assets/0628747f-0939-4090-b5f3-ebb43c8c25a7" />
 
@@ -36,6 +36,20 @@ An interactive leaderboard system for dynamic LLM evaluation that converts natur
 - **Health Monitoring**: Built-in health checks and monitoring
 - **Scalable Design**: Ready for production workloads
 
+## ✨ What's New: Reflex Frontend
+
+We've migrated fully from Streamlit to **Reflex** for a modern, production-ready web experience! 
+
+### 🆕 Reflex Benefits
+- **Modern UI/UX**: Clean, responsive design with Tailwind CSS
+- **Better Performance**: Optimized rendering and state management  
+- **Production Ready**: Built for scalability and deployment
+- **Component Architecture**: Maintainable and extensible codebase
+
+### 🔄 Migration Status
+- ✅ **Reflex Frontend**: Default experience shipped in this repository
+- 🗑️ **Streamlit Frontend**: Removed in favor of Reflex
+
 ## 🚀 Quick Start
 
 ### Recommended: Docker-based setup
@@ -61,16 +75,18 @@ An interactive leaderboard system for dynamic LLM evaluation that converts natur
 4. **Launch the full stack**
 
    ```bash
-   ./scripts/deploy.sh development
+   ./scripts/deploy.sh development   # local dev with live reload mounts
+   # or for a slimmer, prod-like run:
+   ./scripts/deploy.sh
    ```
 
-   The helper script builds the images, starts `docker-compose.dev.yml`, and waits for the services to report healthy.
+   The helper script builds the images, starts the services, and waits for them to report healthy.
 
 5. **Open the application**
-   - Frontend UI: http://localhost:8502
-   - Backend API: http://localhost:8001
-   - API documentation: http://localhost:8001/docs
-   - Flower (Celery dashboard): http://localhost:5556
+   - Frontend UI (Reflex): http://localhost:3000
+   - Backend API: http://localhost:8001 (dev) or http://localhost:8000 (prod)
+   - API documentation: http://localhost:8001/docs (dev) or http://localhost:8000/docs (prod)
+   - Flower (Celery dashboard): http://localhost:5556 (dev) or http://localhost:5555 (prod)
 
 6. **Verify everything is running**
 
@@ -92,7 +108,12 @@ For contributors who prefer not to use Docker:
 ./scripts/setup.sh         # creates a Python 3.11 virtualenv and installs dependencies
 source venv/bin/activate
 python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
-streamlit run apps/frontend/streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+
+# Reflex frontend
+cd apps/reflex_frontend
+API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
+
+# Background worker
 celery -A apps.worker.celery_app worker --loglevel=info
 ```
 
@@ -150,7 +171,7 @@ You will also need local PostgreSQL and Redis instances that match the connectio
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Streamlit     │    │   FastAPI       │    │   Celery        │
+│     Reflex      │    │   FastAPI       │    │   Celery        │
 │   Frontend      │◄──►│   Backend       │◄──►│   Workers       │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
@@ -196,7 +217,7 @@ Documentation is available in both **English** (`docs/eng`) and **한국어** (`
 - **Pydantic**: Data validation and serialization
 
 ### Frontend
-- **Streamlit**: Interactive web application framework
+- **Reflex**: Modern Python web framework
 - **Plotly**: Interactive data visualizations
 - **Pandas**: Data manipulation and analysis
 

@@ -164,13 +164,13 @@ This site can't be reached
 **Solutions**:
 1. **Check frontend logs**:
    ```bash
-   docker-compose logs frontend
+   docker-compose logs reflex
    ```
 
 2. **Verify port binding**:
    ```bash
    docker-compose ps
-   netstat -tlnp | grep 8501
+   netstat -tlnp | grep 3000
    ```
 
 3. **Check browser console**:
@@ -343,25 +343,16 @@ def monitor_performance(func):
 
 ### Frontend Debugging
 
-1. **Streamlit debugging**:
-   ```python
-   import streamlit as st
-   
-   # Debug session state
-   st.write("Session state:", st.session_state)
-   
-   # Debug variables
-   st.write("Debug info:", variable)
-   
-   # JSON pretty print
-   st.json(data_structure)
-   ```
+1. **Reflex debugging**:
+   - Run the frontend with verbose logs: `reflex run --env dev --loglevel debug --backend-port 8001 --frontend-port 3000`
+   - Add temporary `print()` or `logger.debug()` calls inside `rx.State` methods; they appear in the Reflex backend console.
+   - Surface errors to the UI with `rx.toast.error(...)` for quick feedback.
 
 2. **Browser debugging**:
    - Open Developer Tools (F12)
    - Check Console for JavaScript errors
-   - Monitor Network tab for API calls
-   - Use Streamlit's built-in debugging
+   - Monitor Network tab for API calls (ensure requests hit the FastAPI backend successfully)
+   - Verify the WebSocket connection to the Reflex backend stays open
 
 ### Worker Debugging
 

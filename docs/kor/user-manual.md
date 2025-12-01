@@ -8,8 +8,8 @@
 
 BenchHub Plus는 별도의 계정을 요구하지 않습니다. 서비스가 실행 중이라면 브라우저에서 다음 주소로 이동하세요.
 
-- **개발 환경 (`docker-compose.dev.yml`)**: http://localhost:8502
-- **운영 환경 (`docker-compose.yml`)**: http://localhost:8501
+- **개발 환경 (`docker-compose.dev.yml`)**: http://localhost:3000
+- **운영 환경 (`docker-compose.yml`)**: http://localhost:3000 (또는 Nginx 프록시 http://localhost)
 
 상단에는 BenchHub Plus 로고와 함께 **Evaluate**, **Status**, **Browse**, **System** 네 가지 탭이 표시됩니다.
 

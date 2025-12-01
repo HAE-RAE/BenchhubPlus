@@ -6,11 +6,13 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
 
-from ...core.db import get_db
+from ...core.db import get_db, User
 from ...core.schemas import (
     LeaderboardQuery,
     LeaderboardResponse,
+    LeaderboardEntry,
     LeaderboardSuggestionRequest,
     LeaderboardSuggestionResponse,
     TaskResponse,
@@ -18,17 +20,32 @@ from ...core.schemas import (
 )
 from ...core.security import rate_limiter
 from ..services.orchestrator import EvaluationOrchestrator
+from ..dependencies import get_optional_user, require_admin
+from ..services.audit import AuditService
+from ..repositories.leaderboard_repo import LeaderboardRepository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/leaderboard", tags=["leaderboard"])
 
 
+class LeaderboardAdminEntry(BaseModel):
+    """Payload for manual leaderboard moderation."""
+
+    model_name: str = Field(..., min_length=1)
+    language: str = Field(..., min_length=1)
+    subject_type: str = Field(..., min_length=1)
+    task_type: str = Field(..., min_length=1)
+    score: float = Field(..., ge=0.0)
+    quarantined: bool = Field(default=False)
+
+
 @router.post("/generate", response_model=TaskResponse)
 async def generate_leaderboard(
     query: LeaderboardQuery,
     request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """Generate leaderboard for given query and models."""
 
@@ -55,7 +72,8 @@ async def generate_leaderboard(
 
     try:
         orchestrator = EvaluationOrchestrator(db)
-        result = orchestrator.generate_leaderboard(query)
+        user_id = current_user.id if current_user else None
+        result = orchestrator.generate_leaderboard(query, user_id=user_id)
 
         logger.info(f"Generated leaderboard task: {result.task_id}")
         response_headers = {}
@@ -82,17 +100,26 @@ async def browse_leaderboard(
     subject_type: Optional[str] = Query(None, description="Filter by subject type"),
     task_type: Optional[str] = Query(None, description="Filter by task type"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of entries"),
-    db: Session = Depends(get_db)
+    include_quarantined: bool = Query(False, description="Include quarantined entries"),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """Browse existing leaderboard entries with optional filtering."""
     
     try:
+        if include_quarantined and not (current_user and (current_user.is_admin or current_user.role == "admin")):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Admin privileges required to view quarantined entries",
+            )
+
         orchestrator = EvaluationOrchestrator(db)
         result = orchestrator.get_leaderboard_by_criteria(
             language=language,
             subject_type=subject_type,
             task_type=task_type,
-            limit=limit
+            limit=limit,
+            include_quarantined=include_quarantined,
         )
         
         logger.info(f"Retrieved {len(result.entries)} leaderboard entries")
@@ -163,6 +190,88 @@ async def get_leaderboard_stats(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.post(
+    "/entries",
+    dependencies=[Depends(require_admin)],
+    response_model=LeaderboardEntry,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_leaderboard_entry(
+    payload: LeaderboardAdminEntry,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Create or update a leaderboard entry manually (admin)."""
+    try:
+        repo = LeaderboardRepository(db)
+        entry = repo.manual_entry(
+            model_name=payload.model_name,
+            language=payload.language,
+            subject_type=payload.subject_type,
+            task_type=payload.task_type,
+            score=payload.score,
+            quarantined=payload.quarantined,
+        )
+        AuditService(db).log_action(
+            action="leaderboard.manual_entry",
+            resource="leaderboard",
+            resource_id=str(entry.id),
+            user_id=current_user.id,
+            metadata=payload.model_dump(),
+        )
+        return LeaderboardEntry(
+            id=entry.id,
+            model_name=entry.model_name,
+            language=entry.language,
+            subject_type=entry.subject_type,
+            task_type=entry.task_type,
+            score=entry.score,
+            last_updated=entry.last_updated,
+            quarantined=entry.quarantined,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create leaderboard entry: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.delete(
+    "/entries/{entry_id}",
+    dependencies=[Depends(require_admin)],
+)
+async def delete_leaderboard_entry(
+    entry_id: int,
+    quarantine: bool = Query(True, description="Soft delete (quarantine) entry"),
+    hard: bool = Query(False, description="Hard delete instead of quarantine"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Delete or quarantine leaderboard entry."""
+    try:
+        repo = LeaderboardRepository(db)
+        deleted = False
+        if hard:
+            deleted = repo.hard_delete(entry_id)
+        else:
+            deleted = repo.soft_delete(entry_id, quarantine=quarantine)
+
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Entry not found")
+
+        AuditService(db).log_action(
+            action="leaderboard.delete" if hard else "leaderboard.quarantine",
+            resource="leaderboard",
+            resource_id=str(entry_id),
+            user_id=current_user.id,
+            metadata={"hard": hard, "quarantine": quarantine},
+        )
+        return {"message": "Entry deleted" if hard else "Entry quarantined"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete leaderboard entry: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.delete("/cache")
 async def clear_cache(
     older_than_hours: Optional[int] = Query(None, ge=1, description="Clear entries older than N hours"),
@@ -171,8 +280,6 @@ async def clear_cache(
     """Clear leaderboard cache."""
     
     try:
-        from ..repositories.leaderboard_repo import LeaderboardRepository
-        
         repo = LeaderboardRepository(db)
         count = repo.clear_cache(older_than_hours)
         

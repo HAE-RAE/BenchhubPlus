@@ -49,7 +49,7 @@ services:
       - API_PORT=8000
       - DEBUG=true
       - LOG_LEVEL=debug
-      - FRONTEND_URL=http://localhost:8502
+      - FRONTEND_URL=http://localhost:3000
     ports:
       - "8001:8000"
     depends_on:
@@ -87,21 +87,25 @@ services:
     command: ["python", "-m", "celery", "-A", "apps.worker.celery_app", "worker", "--loglevel=debug", "--concurrency=1", "--queues", "evaluation,maintenance"]
 
   # Streamlit Frontend (Development)
-  frontend:
+  reflex:
     build:
       context: .
-      dockerfile: Dockerfile.frontend
-    container_name: benchhub_frontend_dev
+      dockerfile: Dockerfile.reflex
+    container_name: benchhub_reflex_dev
     environment:
       - API_BASE_URL=http://backend:8000
-      - BROWSER_API_URL=http://localhost:8001
     ports:
-      - "8502:8501"
+      - "3000:3000"
     depends_on:
       - backend
     volumes:
-      - .:/app  # Mount source code for development
-    command: ["streamlit", "run", "apps/frontend/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.enableCORS=false", "--server.enableXsrfProtection=false", "--server.runOnSave=true"]
+      - ./apps/reflex_frontend:/app
+    command: ["reflex", "run", "--env", "dev", "--backend-host", "0.0.0.0", "--backend-port", "8001", "--frontend-host", "0.0.0.0", "--frontend-port", "3000", "--loglevel", "debug"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   # Celery Flower (Development)
   flower:

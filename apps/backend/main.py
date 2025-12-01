@@ -14,7 +14,7 @@ from ..core.config import get_settings
 from ..core.db import init_db
 from ..core.security import RedisRateLimiter
 from ..worker.celery_app import celery_app
-from .routes import auth, leaderboard, status, hret
+from .routes import auth, leaderboard, status, hret, manager
 from .seeding import seed_database  # <-- [수정] 시딩 함수 임포트
 
 try:
@@ -119,10 +119,15 @@ app = FastAPI(
 allowed_origins = settings.cors_allowed_origins
 if not allowed_origins:
     # Default to allowing frontend in development
-    allowed_origins = [
-        f"http://{settings.frontend_host}:{settings.frontend_port}",
-        "http://localhost:8501",
-    ]
+    default_ports = {settings.frontend_port, 3000}
+    allowed_origins = []
+    for port in default_ports:
+        allowed_origins.extend(
+            [
+                f"http://{settings.frontend_host}:{port}",
+                f"http://localhost:{port}",
+            ]
+        )
     logger.warning(f"CORS allowed origins not configured, using defaults: {allowed_origins}")
 
 app.add_middleware(
@@ -154,6 +159,7 @@ app.include_router(auth.router)
 app.include_router(leaderboard.router)
 app.include_router(status.router)
 app.include_router(hret.router)
+app.include_router(manager.router)
 
 
 @app.get("/")

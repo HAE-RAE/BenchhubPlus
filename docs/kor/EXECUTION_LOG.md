@@ -6,8 +6,8 @@
 
 ### 1단계: 환경 구성
 1. `.env` 파일 생성 및 OpenAI API 키, 서비스 포트 설정
-2. `requirements.txt`를 이용한 기본 의존성 설치
-3. `streamlit-option-menu` 추가 설치
+2. `pip install -e .`로 백엔드 의존성 설치
+3. `pip install -r apps/reflex_frontend/requirements.txt`로 프런트엔드 의존성 설치
 
 ### 2단계: 서비스 인프라 준비
 1. **Redis 서버 설정**
@@ -22,36 +22,36 @@
 
 ### 3단계: 서비스 구동
 1. **백엔드(FastAPI)**
-   - 명령어: `python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 12000 --reload`
-   - 상태: 12000 포트에서 정상 실행
-2. **프런트엔드(Streamlit)**
-   - 명령어: `streamlit run apps/frontend/streamlit_app.py --server.port 12001 --server.address 0.0.0.0`
-   - 상태: 12001 포트에서 UI 확인
+   - 명령어: `python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload`
+   - 상태: 8000 포트에서 정상 실행
+2. **프런트엔드(Reflex)**
+   - 명령어: `cd apps/reflex_frontend && API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000`
+   - 상태: 3000 포트(Reflex 백엔드 8001)에서 UI 확인
 3. **Celery 워커**
-   - 명령어: `celery -A apps.backend.celery_app worker --loglevel=info --concurrency=4`
+   - 명령어: `celery -A apps.worker.celery_app worker --loglevel=info --concurrency=4`
    - 상태: 4개 워커 프로세스로 실행
 
 ## 발생한 이슈와 해결 방법
 
-### 이슈 1: `streamlit-option-menu` 누락
-- **증상**: `ModuleNotFoundError: No module named 'streamlit_option_menu'`
-- **해결**: `pip install streamlit-option-menu`
-- **원인**: requirements.txt에 패키지가 누락됨
+### 이슈 1: Reflex 의존성 누락
+- **증상**: `ModuleNotFoundError: No module named 'reflex'`
+- **해결**: `pip install -r apps/reflex_frontend/requirements.txt`
+- **원인**: 프런트엔드 의존성 설치 단계 생략
 
-### 이슈 2: `os` 모듈 미임포트
-- **증상**: `NameError: name 'os' is not defined`
-- **해결**: `apps/frontend/streamlit_app.py`에 `import os` 추가
-- **원인**: `os.getenv()` 사용 중 임포트 누락
-
-### 이슈 3: SQLAlchemy 2.0 호환성
+### 이슈 2: SQLAlchemy 2.0 호환성
 - **증상**: `sqlalchemy.exc.ArgumentError: Textual SQL expression should be explicitly declared as text()`
 - **해결**: `apps/backend/api/status.py`에서 `connection.execute(text("SELECT 1"))`로 수정
 - **원인**: SQLAlchemy 2.0에서 raw SQL은 `text()` 래퍼가 필요
 
-### 이슈 4: Streamlit Secrets 설정
-- **증상**: `FileNotFoundError: .streamlit/secrets.toml`
-- **해결**: Secrets 대신 환경 변수(`os.getenv`) 사용
-- **원인**: `secrets.toml` 미구성 환경에서 실행
+### 이슈 3: 포트 충돌
+- **증상**: `OSError: [Errno 98] Address already in use`
+- **해결**:
+  ```bash
+  lsof -ti:8000 | xargs kill -9   # FastAPI 포트 해제
+  lsof -ti:3000 | xargs kill -9   # Reflex 프런트엔드 포트 해제
+  lsof -ti:8001 | xargs kill -9   # Reflex 백엔드 포트 해제
+  ```
+- **원인**: 이전 실행 프로세스가 포트를 점유
 
 ## 서비스 검증
 - **Redis**: `redis-cli ping` → `PONG`
@@ -86,4 +86,3 @@
 3. SQLAlchemy 2.0 이상에서는 `text()` 사용을 습관화합니다.
 4. Redis를 가장 먼저 실행하여 의존 관계를 확보합니다.
 5. 포트 설정을 문서화하여 구성 요소 간 충돌을 방지합니다.
-

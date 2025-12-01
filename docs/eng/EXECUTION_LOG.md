@@ -6,8 +6,8 @@ This document records the actual execution process and issues encountered during
 
 ### Phase 1: Environment Setup
 1. **Created .env file** with OpenAI API key and service configuration
-2. **Installed dependencies** from requirements.txt
-3. **Installed additional packages**: streamlit-option-menu
+2. **Installed backend dependencies** with `pip install -e .`
+3. **Installed frontend dependencies** with `pip install -r apps/reflex_frontend/requirements.txt`
 
 ### Phase 2: Service Infrastructure
 1. **Redis Server Setup**
@@ -25,49 +25,35 @@ This document records the actual execution process and issues encountered during
 
 ### Phase 3: Service Startup
 1. **Backend Server (FastAPI)**
-   - Command: `python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 12000 --reload`
-   - Status: ✅ Running on port 12000
-   - Health check: `http://localhost:12000/api/v1/health`
+   - Command: `python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload`
+   - Status: ✅ Running on port 8000
+   - Health check: `http://localhost:8000/api/v1/health`
 
-2. **Frontend Server (Streamlit)**
-   - Command: `streamlit run apps/frontend/streamlit_app.py --server.port 12001 --server.address 0.0.0.0`
-   - Status: ✅ Running on port 12001
-   - Access URL: `http://localhost:12001`
+2. **Frontend Server (Reflex)**
+   - Command: `cd apps/reflex_frontend && API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000`
+   - Status: ✅ Running on port 3000 (Reflex backend on 8001)
+   - Access URL: `http://localhost:3000`
 
 3. **Celery Worker**
-   - Command: `celery -A apps.backend.celery_app worker --loglevel=info --concurrency=4`
+   - Command: `celery -A apps.worker.celery_app worker --loglevel=info --concurrency=4`
    - Status: ✅ Running with 4 worker processes
 
 ## Issues Encountered and Solutions
 
-### Issue 1: Missing streamlit-option-menu Package
+### Issue 1: Missing Reflex Dependency
 **Error:**
 ```
-ModuleNotFoundError: No module named 'streamlit_option_menu'
+ModuleNotFoundError: No module named 'reflex'
 ```
 
 **Solution:**
 ```bash
-pip install streamlit-option-menu
+pip install -r apps/reflex_frontend/requirements.txt
 ```
 
-**Root Cause:** Package not included in requirements.txt
+**Root Cause:** Frontend dependency install step was skipped
 
-### Issue 2: Missing os Module Import
-**Error:**
-```
-NameError: name 'os' is not defined
-```
-
-**Solution:**
-Added `import os` to `apps/frontend/streamlit_app.py`:
-```python
-import os
-```
-
-**Root Cause:** Frontend code used `os.getenv()` but didn't import the os module
-
-### Issue 3: SQLAlchemy 2.0 Compatibility
+### Issue 2: SQLAlchemy 2.0 Compatibility
 **Error:**
 ```
 sqlalchemy.exc.ArgumentError: Textual SQL expression should be explicitly declared as text()
@@ -83,20 +69,20 @@ from sqlalchemy import text
 
 **Root Cause:** SQLAlchemy 2.0 requires explicit text() wrapper for raw SQL
 
-### Issue 4: Streamlit Secrets Configuration
-**Error:**
+### Issue 3: Port Conflicts
+**Symptoms:**
 ```
-FileNotFoundError: [Errno 2] No such file or directory: '.streamlit/secrets.toml'
+OSError: [Errno 98] Address already in use
 ```
 
 **Solution:**
-Modified frontend to use environment variables instead of Streamlit secrets:
-```python
-# Changed: API_BASE_URL = st.secrets.get("API_BASE_URL", "http://localhost:8000")
-# To: API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:12000")
+```bash
+lsof -ti:8000 | xargs kill -9   # free FastAPI port
+lsof -ti:3000 | xargs kill -9   # free Reflex frontend port
+lsof -ti:8001 | xargs kill -9   # free Reflex backend port
 ```
 
-**Root Cause:** Streamlit secrets file not configured, environment variables more suitable
+**Root Cause:** Previous processes were still bound to development ports
 
 ## Service Verification
 

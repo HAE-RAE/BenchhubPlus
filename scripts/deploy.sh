@@ -65,12 +65,12 @@ if [ "$ENVIRONMENT" = "development" ]; then
     COMPOSE_FILE="docker-compose.dev.yml"
     echo -e "${YELLOW}🔧 Using development configuration${NC}"
     HOST_BACKEND_PORT=8001
-    HOST_FRONTEND_PORT=8502
+    HOST_FRONTEND_PORT=3000
 else
     COMPOSE_FILE="docker-compose.yml"
     echo -e "${GREEN}🏭 Using production configuration${NC}"
     HOST_BACKEND_PORT=8000
-    HOST_FRONTEND_PORT=8501
+    HOST_FRONTEND_PORT=3000
 fi
 
 # Stop existing containers
@@ -118,7 +118,7 @@ else
 fi
 
 # Check Frontend
-if curl -f http://localhost:${HOST_FRONTEND_PORT}/_stcore/health > /dev/null 2>&1; then
+if curl -f http://localhost:${HOST_FRONTEND_PORT} > /dev/null 2>&1; then
     echo -e "${GREEN}✅ Frontend is ready${NC}"
 else
     echo -e "${RED}❌ Frontend is not ready${NC}"
@@ -137,14 +137,14 @@ echo -e "${GREEN}🎉 Deployment completed successfully!${NC}"
 echo -e "${BLUE}📋 Service URLs:${NC}"
 
 if [ "$ENVIRONMENT" = "development" ]; then
-    echo -e "  • Frontend: ${GREEN}http://localhost:8502${NC}"
+    echo -e "  • Frontend (Reflex): ${GREEN}http://localhost:3000${NC}"
     echo -e "  • Backend API: ${GREEN}http://localhost:8001${NC}"
     echo -e "  • API Docs: ${GREEN}http://localhost:8001/docs${NC}"
     echo -e "  • Flower (Celery): ${GREEN}http://localhost:5556${NC}"
     echo -e "  • PostgreSQL: ${GREEN}localhost:5433${NC}"
     echo -e "  • Redis: ${GREEN}localhost:6380${NC}"
 else
-    echo -e "  • Frontend: ${GREEN}http://localhost:8501${NC}"
+    echo -e "  • Frontend (Reflex): ${GREEN}http://localhost:3000${NC}"
     echo -e "  • Backend API: ${GREEN}http://localhost:8000${NC}"
     echo -e "  • API Docs: ${GREEN}http://localhost:8000/docs${NC}"
     echo -e "  • Flower (Celery): ${GREEN}http://localhost:5555${NC}"

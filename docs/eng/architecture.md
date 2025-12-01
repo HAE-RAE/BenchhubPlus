@@ -30,27 +30,26 @@ This document provides a comprehensive overview of BenchHub Plus architecture, d
 
 ## 🧩 Component Architecture
 
-### Frontend Layer (Streamlit)
+### Frontend Layer (Reflex)
 
 **Purpose**: User interface and interaction layer
 
 **Components**:
-- `streamlit_app.py`: Main application entry point
-- `components/`: Reusable UI components
-  - `forms.py`: Input forms and validation
-  - `charts.py`: Data visualization components
-  - `navigation.py`: Navigation and routing
+- `rxconfig.py`: Frontend/backed port configuration and plugins
+- `reflex_frontend/reflex_frontend.py`: Application entry point and state
+- `reflex_frontend/`: UI components and layout helpers
+- `assets/`: Static assets and stylesheets
 
 **Responsibilities**:
 - User input collection and validation
 - Real-time data visualization
-- API communication
-- Session state management
+- API communication with the FastAPI backend
+- Session state management via Reflex state
 
 **Technology Stack**:
-- Streamlit for web interface
-- Plotly for interactive charts
-- Requests for API communication
+- Reflex for the web interface
+- Tailwind CSS plugin for styling
+- httpx for API communication
 
 ### Backend Layer (FastAPI)
 
