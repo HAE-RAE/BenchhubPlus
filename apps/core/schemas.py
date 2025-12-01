@@ -147,6 +147,39 @@ class TaskDetailResponse(BaseModel):
         json_encoders = {datetime: lambda dt: dt.isoformat()}
 
 
+class CleanupResourceStatus(BaseModel):
+    """Resource-level cleanup outcome."""
+
+    deleted: int = 0
+    skipped: int = 0
+    errors: List[str] = Field(default_factory=list)
+    duration_ms: Optional[int] = None
+
+
+class CleanupProgress(BaseModel):
+    """Cleanup task progress information."""
+
+    current: int = 0
+    total: int = 0
+    stage: Optional[str] = None
+    eta_seconds: Optional[int] = None
+
+
+class CleanupTaskStatus(BaseModel):
+    """Cleanup task status/summary."""
+
+    task_id: str
+    status: str
+    progress: Optional[CleanupProgress] = None
+    resources: Optional[Dict[str, CleanupResourceStatus]] = None
+    summary: Optional[Dict[str, Any]] = None
+    params: Optional[Dict[str, Any]] = None
+    dry_run: Optional[bool] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    last_error: Optional[str] = None
+
+
 class ExperimentSampleCreate(BaseModel):
     """Schema for creating experiment sample."""
     
