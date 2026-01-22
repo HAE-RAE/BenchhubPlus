@@ -12,6 +12,7 @@ from rxconfig import config
 
 # API Configuration
 DEFAULT_API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
+PUBLIC_API_BASE = os.getenv("PUBLIC_API_BASE_URL", "http://localhost:8001")
 API_TIMEOUT = 30
 
 
@@ -21,7 +22,14 @@ class AppState(rx.State):
     # API Configuration
     api_base_url: str = DEFAULT_API_BASE
     access_token: str = os.getenv("MANAGER_TOKEN", "")
-    
+
+    # --- Auth state ---
+    is_authenticated: bool = False
+    user_email: str = ""
+    user_name: str = ""
+    user_picture: str = ""
+    auth_checked: bool = False
+
     # Current page
     current_page: str = "evaluation"
     
@@ -146,7 +154,71 @@ class AppState(rx.State):
         if minutes == 0:
             return f"{secs}s"
         return f"{minutes}m {secs}s"
+        
+    # ----- Auth / Session helpers -----
+    async def initialize_auth(self):
+        """Read token from URL query and fetch current user info."""
+        try:
+            params = self.router.page.params or {}
+        except Exception:
+            params = {}
+
+        url_token = params.get("token", "")
+
+        if isinstance(url_token, (list, tuple)):
+            url_token = url_token[0] if url_token else ""
+
+        url_token = str(url_token).strip().strip('"').strip("'")
+
+        if url_token:
+            self.access_token = url_token
     
+        if not self.access_token:
+            self.is_authenticated = False
+            self.user_email = ""
+            self.user_name = ""
+            self.user_picture = ""
+            self.auth_checked = True
+            return
+
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                resp = await client.get(
+                    f"{self.api_base_url}/api/v1/auth/me",
+                    headers=self._auth_headers(),
+                )
+
+            if resp.status_code == 200:
+                data = resp.json()
+                self.is_authenticated = True
+                self.user_email = data.get("email", "")
+                self.user_name = data.get("name", "")
+                self.user_picture = data.get("picture", "")
+            else:
+                self.is_authenticated = False
+                self.access_token = ""
+                self.user_email = ""
+                self.user_name = ""
+                self.user_picture = ""
+
+        except Exception as e:
+            print(f"initialize_auth error: {e}")
+            self.is_authenticated = False
+
+        self.auth_checked = True
+
+    async def start_google_login(self):
+        return rx.redirect(f"{PUBLIC_API_BASE}/api/v1/auth/google/login")
+
+    async def logout(self):
+        """Logout locally by clearing auth state and reloading the app."""
+        self.access_token = ""
+        self.is_authenticated = False
+        self.user_email = ""
+        self.user_name = ""
+        self.user_picture = ""
+
+        return rx.redirect(path="/")
 
     # ----- Manager dashboard helpers -----
     async def refresh_manager_snapshot(self):
@@ -440,6 +512,81 @@ class AppState(rx.State):
 
 def header() -> rx.Component:
     """Main header component."""
+    user_info = rx.cond(
+        AppState.is_authenticated,
+        rx.popover.root(
+            rx.popover.trigger(
+                rx.avatar(
+                    src=AppState.user_picture,
+                    fallback=AppState.user_name,
+                    size="2",
+                    cursor="pointer",
+                ),
+                as_child=True, 
+            ),
+            rx.popover.content(
+                rx.vstack(
+                    rx.text(
+                        rx.cond(AppState.user_name != "", AppState.user_name, "Logged in"),
+                        weight="bold",
+                        size="2",
+                    ),
+                    rx.cond(
+                        AppState.user_email != "",
+                        rx.text(AppState.user_email, size="1", color="gray"),
+                        rx.fragment(),
+                    ),
+                    align="start",
+                    spacing="1",
+                ),
+                side="bottom",
+                align="end",
+                padding="0.75rem",
+                width="240px",
+            ),
+        ),
+        rx.fragment(),
+    )
+
+    auth_button = rx.cond(
+        AppState.is_authenticated,
+        rx.button(
+            "Logout🔓",
+            variant="outline",
+            color_scheme="blue",
+            size="2",
+            on_click=AppState.logout,
+        ),
+        rx.button(
+            "Login🔒",
+            variant="solid",
+            color_scheme="blue",
+            size="2",
+            on_click=AppState.start_google_login,
+        ),
+    )
+
+    right_controls = rx.vstack(
+        rx.hstack(
+            rx.spacer(),
+            rx.color_mode.button(),
+            width="100%",
+            justify="end",
+            align="center",
+        ),
+        rx.hstack(
+            user_info,
+            auth_button,
+            spacing="3",
+            align="center",
+            justify="end",
+            width="100%",
+        ),
+        spacing="1",
+        align="end",
+        width="320px",
+    )
+
     return rx.box(
         rx.hstack(
             rx.heading(
@@ -450,7 +597,7 @@ def header() -> rx.Component:
                 background_clip="text",
             ),
             rx.spacer(),
-            rx.color_mode.button(),
+            right_controls,
             width="100%",
             align="center",
             padding="1rem",
@@ -1099,7 +1246,7 @@ def manager_health_section() -> rx.Component:
                 align="center",
             ),
             rx.cond(
-                AppState.manager_last_updated,
+                AppState.manager_last_updated != None,
                 rx.text("Last updated: ", AppState.manager_last_updated, size="2", color="gray"),
                 rx.text("Click refresh to load sample data", size="2", color="gray"),
             ),
@@ -1348,4 +1495,4 @@ app = rx.App(
         accent_color="blue",
     )
 )
-app.add_page(index, title="BenchHub Plus")
+app.add_page(index, title="BenchHub Plus", on_load=AppState.initialize_auth,)
