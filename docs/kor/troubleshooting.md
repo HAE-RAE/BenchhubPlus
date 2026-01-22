@@ -62,6 +62,31 @@ BenchHub Plus 사용 중 자주 발생하는 문제와 해결 방법을 정리�
   ```
 - Redis와 데이터베이스 리소스 사용량을 모니터링하세요.
 
+## 🔄 유지보수/정리
+
+### API로 정리 작업 실행 (관리자)
+오래된 작업/샘플/캐시를 비동기(202)로 정리할 수 있습니다.
+
+1. 정리 예약(먼저 `dry_run` 권장)
+   ```bash
+   curl -X POST http://localhost:8001/api/v1/maintenance/cleanup \
+     -H "Content-Type: application/json" \
+     -H "Authorization: Bearer <admin_token>" \
+     -d '{"dry_run": true, "resources": ["tasks","samples","cache"], "days_old": 7, "limit": 500, "hard_delete": false}'
+   ```
+   - 기본 리소스: `tasks`, `samples`, `cache`
+   - `dry_run=true`로 영향 범위를 먼저 확인
+   - `hard_delete=true`면 캐시를 실제 삭제, 기본은 quarantine 처리
+
+2. 상태/진행률 확인
+   ```bash
+   curl http://localhost:8001/api/v1/maintenance/cleanup/<task_id> \
+     -H "Authorization: Bearer <admin_token>"
+   ```
+   - `status`: `PENDING | RUNNING | PARTIAL | SUCCESS | FAILED`
+   - `progress`: `{current, total, stage, eta_seconds}` 형태로 프로그레스 바 표시 가능
+   - 리소스별 `{deleted, skipped, errors, duration_ms}`를 반환
+
 ## 추가 도움말
 - `logs/` 디렉터리에서 서비스별 로그를 확인합니다.
 - Docker Compose 사용 시 `docker compose ps`, `docker compose logs -f <service>`로 상태를 점검합니다.
