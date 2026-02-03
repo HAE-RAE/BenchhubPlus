@@ -76,7 +76,7 @@ dependencies = [
     
     # Evaluation - HRET Integration
     # Note: Using local path for development, change to PyPI when published
-    # "haerae-evaluation-toolkit>=1.0.0",
+    "haerae-evaluation-toolkit @ git+https://github.com/HAE-RAE/haerae-evaluation-toolkit.git",
 ]
 
 [project.optional-dependencies]

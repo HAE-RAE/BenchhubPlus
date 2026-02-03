@@ -120,75 +120,80 @@ Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Cu
         models: List[ModelInfo]
     ) -> str:
         """Generate HRET-compatible plan.yaml from configuration and models."""
-        
-        # TODO: This is a placeholder implementation
-        # In a real implementation, this would generate proper HRET configuration
-        # based on BenchHub data structure and HRET requirements
-        
-        plan_data = {
-            "version": "2.0",
-            "metadata": {
-                "name": f"BenchHub Plus Evaluation - {plan_config.task_type}",
-                "description": f"Evaluation plan for {plan_config.language} {'/'.join(plan_config.subject_type)} {plan_config.task_type}",
-                "created_by": "BenchHub Plus Planner Agent",
-                "language": plan_config.language,
-                "problem_type": plan_config.problem_type,
-                "target_type": plan_config.target_type,
-                "subject_type": plan_config.subject_type,
-                "task_type": plan_config.task_type,
-                "external_tool_usage": plan_config.external_tool_usage,
+        return build_plan_yaml(plan_config, models)
+
+
+def build_plan_yaml(plan_config: PlanConfig, models: List[ModelInfo]) -> str:
+    """Generate HRET-compatible plan.yaml from configuration and models."""
+
+    # TODO: This is a placeholder implementation
+    # In a real implementation, this would generate proper HRET configuration
+    # based on BenchHub data structure and HRET requirements
+
+    plan_data = {
+        "version": "2.0",
+        "metadata": {
+            "name": f"BenchHub Plus Evaluation - {plan_config.task_type}",
+            "description": f"Evaluation plan for {plan_config.language} {'/'.join(plan_config.subject_type)} {plan_config.task_type}",
+            "created_by": "BenchHub Plus Planner Agent",
+            "language": plan_config.language,
+            "problem_type": plan_config.problem_type,
+            "target_type": plan_config.target_type,
+            "subject_type": plan_config.subject_type,
+            "task_type": plan_config.task_type,
+            "external_tool_usage": plan_config.external_tool_usage,
+            "sample_size": plan_config.sample_size,
+            "seed": plan_config.seed
+        },
+        "models": [],
+        "datasets": [
+            {
+                "name": "benchhub",
+                "type": "benchhub",
+                "filters": {
+                    "problem_type": plan_config.problem_type,
+                    "target_type": plan_config.target_type,
+                    "subject_type": plan_config.subject_type,
+                    "task_type": plan_config.task_type,
+                    "external_tool_usage": plan_config.external_tool_usage,
+                    "language": plan_config.language
+                },
                 "sample_size": plan_config.sample_size,
                 "seed": plan_config.seed
-            },
-            "models": [],
-            "datasets": [
-                {
-                    "name": "benchhub",
-                    "type": "benchhub",
-                    "filters": {
-                        "problem_type": plan_config.problem_type,
-                        "target_type": plan_config.target_type,
-                        "subject_type": plan_config.subject_type,
-                        "task_type": plan_config.task_type,
-                        "external_tool_usage": plan_config.external_tool_usage,
-                        "language": plan_config.language
-                    },
-                    "sample_size": plan_config.sample_size,
-                    "seed": plan_config.seed
-                }
-            ],
-            "evaluation": {
-                "method": "string_match" if plan_config.problem_type == "MCQA" else "llm_judge",
-                "judge_model": "gpt-4" if plan_config.problem_type != "MCQA" else None,
-                "criteria": [
-                    "correctness",
-                    "completeness",
-                    "clarity"
-                ] if plan_config.problem_type != "MCQA" else ["correctness"]
-            },
-            "output": {
-                "format": "json",
-                "include_samples": True,
-                "include_metadata": True
+            }
+        ],
+        "evaluation": {
+            "method": "string_match" if plan_config.problem_type == "MCQA" else "llm_judge",
+            "judge_model": "gpt-4" if plan_config.problem_type != "MCQA" else None,
+            "criteria": [
+                "correctness",
+                "completeness",
+                "clarity"
+            ] if plan_config.problem_type != "MCQA" else ["correctness"]
+        },
+        "output": {
+            "format": "json",
+            "include_samples": True,
+            "include_metadata": True
+        }
+    }
+
+    # Add model configurations
+    for model in models:
+        model_config = {
+            "name": model.name,
+            "type": model.model_type,
+            "api_base": model.api_base,
+            "api_key": "${API_KEY}",  # Will be replaced at runtime
+            "parameters": {
+                "temperature": 0.1,
+                "max_tokens": 1000,
+                "top_p": 1.0
             }
         }
-        
-        # Add model configurations
-        for model in models:
-            model_config = {
-                "name": model.name,
-                "type": model.model_type,
-                "api_base": model.api_base,
-                "api_key": "${API_KEY}",  # Will be replaced at runtime
-                "parameters": {
-                    "temperature": 0.1,
-                    "max_tokens": 1000,
-                    "top_p": 1.0
-                }
-            }
-            plan_data["models"].append(model_config)
-        
-        return yaml.dump(plan_data, default_flow_style=False, allow_unicode=True)
+        plan_data["models"].append(model_config)
+
+    return yaml.dump(plan_data, default_flow_style=False, allow_unicode=True)
     
     def create_evaluation_plan(
         self, 

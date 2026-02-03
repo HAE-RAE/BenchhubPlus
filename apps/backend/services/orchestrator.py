@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from ...core.credential_service import CredentialService, StoredCredential
 from ...core.db import LeaderboardCache
 
-from ...core.plan.planner import PlannerAgent, create_planner_agent
+from ...core.plan.planner import PlannerAgent, create_planner_agent, build_plan_yaml
 from ...core.schemas import (
     LeaderboardQuery,
     LeaderboardResponse,
@@ -275,8 +275,9 @@ class EvaluationOrchestrator:
         stored_credentials: List[StoredCredential]
     ) -> str:
         """Create fallback plan when planner agent is not available."""
+        plan_config = self._default_plan_config()
+        plan_yaml = build_plan_yaml(plan_config, secure_models)
 
-        # Simple fallback plan
         fallback_plan = {
             "query": query.query,
             "models": [
@@ -287,12 +288,8 @@ class EvaluationOrchestrator:
                 }
                 for model in secure_models
             ],
-            "config": {
-                "language": "English",  # Default
-                "subject_type": "General",  # Default
-                "task_type": "QA",  # Default
-                "sample_size": 100
-            },
+            "config": plan_config.dict(),
+            "plan_yaml": plan_yaml,
             "fallback": True,
             "created_at": datetime.utcnow().isoformat()
         }

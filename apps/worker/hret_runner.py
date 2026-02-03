@@ -5,7 +5,7 @@ import logging
 import os
 import tempfile
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import yaml
 from datetime import datetime
 
@@ -42,7 +42,7 @@ class HRETRunner:
         plan_yaml: str,
         models: List[Dict[str, Any]],
         timeout: int = 1800  # 30 minutes
-    ) -> Dict[str, Any]:
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Run evaluation using HRET."""
         
         try:
@@ -55,10 +55,10 @@ class HRETRunner:
             hret_configs = self._convert_plan_to_hret_configs(plan_data, models)
             
             # Run evaluations for each model
-            results = self._run_hret_evaluations(hret_configs, timeout)
+            results, raw_results = self._run_hret_evaluations(hret_configs, timeout)
             
             logger.info("HRET evaluation completed successfully")
-            return results
+            return results, raw_results
             
         except Exception as e:
             logger.error(f"HRET evaluation failed: {e}")
@@ -198,7 +198,7 @@ class HRETRunner:
         self, 
         hret_configs: List[Dict[str, Any]], 
         timeout: int
-    ) -> Dict[str, Any]:
+    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Run HRET evaluations for all configurations."""
         
         results = {
@@ -209,6 +209,7 @@ class HRETRunner:
             },
             "model_results": []
         }
+        raw_results: List[Dict[str, Any]] = []
         
         start_time = time.time()
         
@@ -220,6 +221,7 @@ class HRETRunner:
                 evaluator = Evaluator()
                 
                 # Run evaluation
+                evaluation_start = time.time()
                 evaluation_result = evaluator.run(
                     model=config["model"]["name"],
                     dataset=config["dataset"]["name"],
@@ -232,21 +234,24 @@ class HRETRunner:
                     target_lang=config["target_lang"],
                     num_few_shot=config["few_shot"].get("num", 0)
                 )
+                execution_time = time.time() - evaluation_start
                 
                 # Convert HRET result to BenchhubPlus format
                 model_result = self._convert_hret_result(
-                    evaluation_result, 
-                    config["model_info"], 
-                    config["dataset_info"]
+                    evaluation_result,
+                    config["model_info"],
+                    config["dataset_info"],
+                    execution_time
                 )
                 
                 results["model_results"].append(model_result)
-                
-                # Generate sample-level results for database storage
-                self._generate_sample_results_from_hret(
-                    evaluation_result,
-                    config["model_info"],
-                    config["dataset_info"]
+                raw_results.append(
+                    {
+                        "evaluation_result": evaluation_result,
+                        "model_info": config["model_info"],
+                        "dataset_info": config["dataset_info"],
+                        "execution_time": execution_time,
+                    }
                 )
                 
             except Exception as e:
@@ -265,13 +270,14 @@ class HRETRunner:
                 results["model_results"].append(error_result)
         
         results["metadata"]["execution_time"] = time.time() - start_time
-        return results
+        return results, raw_results
     
     def _convert_hret_result(
         self, 
         hret_result: EvaluationResult, 
         model_info: Dict[str, Any],
-        dataset_info: Dict[str, Any]
+        dataset_info: Dict[str, Any],
+        execution_time: Optional[float] = None
     ) -> Dict[str, Any]:
         """Convert HRET EvaluationResult to BenchhubPlus format."""
         
@@ -317,7 +323,7 @@ class HRETRunner:
             "correct_samples": correct_samples,
             "accuracy": metrics.get("accuracy", correct_samples / total_samples if total_samples > 0 else 0.0),
             "average_score": metrics.get("average_score", correct_samples / total_samples if total_samples > 0 else 0.0),
-            "execution_time": metrics.get("execution_time", 0.0),
+            "execution_time": metrics.get("execution_time", execution_time or 0.0),
             "metadata": {
                 "api_base": model_info.get("api_base"),
                 "model_type": model_info.get("model_type"),

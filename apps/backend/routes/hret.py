@@ -2,6 +2,7 @@
 
 import json
 import logging
+from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 from datetime import datetime
 
@@ -15,6 +16,7 @@ from ...worker.celery_app import celery_app
 from ...worker.hret_runner import HRETRunner, HRET_AVAILABLE
 from ...worker.hret_config import HRETConfigManager
 from ...worker.hret_storage import HRETStorageManager
+from ...worker.hret_mapper import HRETResultMapper
 
 logger = logging.getLogger(__name__)
 
@@ -332,7 +334,7 @@ async def run_hret_evaluation_task(
         runner = HRETRunner()
         timeout_seconds = timeout_minutes * 60
         
-        results = runner.run_evaluation(
+        results, raw_results = runner.run_evaluation(
             plan_yaml=plan_yaml,
             models=models,
             timeout=timeout_seconds
@@ -340,25 +342,38 @@ async def run_hret_evaluation_task(
         
         # Store results if requested
         if store_results:
-            storage_manager = HRETStorageManager()
-            
-            # Convert results to storage format
-            from ...worker.hret_mapper import HRETResultMapper
             mapper = HRETResultMapper()
-            
-            # This is a simplified version - in practice, you'd need to properly
-            # extract HRET results and convert them
-            model_results = []
-            sample_results = []
-            
-            # Store in database
-            storage_stats = storage_manager.store_evaluation_results(
-                model_results=model_results,
-                sample_results=sample_results,
-                task_id=task_id
-            )
-            
-            results["storage_stats"] = storage_stats
+            mapped_model_results = []
+            mapped_sample_results = []
+
+            for raw_result in raw_results:
+                try:
+                    model_result, sample_results = mapper.map_hret_result_to_benchhub(
+                        raw_result["evaluation_result"],
+                        raw_result["model_info"],
+                        raw_result["dataset_info"],
+                        raw_result.get("execution_time", 0.0),
+                    )
+                    mapped_model_results.append(model_result)
+                    mapped_sample_results.extend(sample_results)
+                except Exception as map_error:
+                    logger.error(
+                        "Failed to map HRET result for %s: %s",
+                        raw_result.get("model_info", {}).get("name"),
+                        map_error,
+                    )
+
+            if mapped_model_results or mapped_sample_results:
+                storage_manager = HRETStorageManager()
+                storage_stats = storage_manager.store_evaluation_results(
+                    model_results=mapped_model_results,
+                    sample_results=mapped_sample_results,
+                    task_id=None,
+                )
+                results["storage_stats"] = storage_stats
+
+            if mapped_model_results:
+                results["model_results"] = [asdict(model_result) for model_result in mapped_model_results]
         
         # Update task status to SUCCESS
         if task:

@@ -154,6 +154,47 @@ class AppState(rx.State):
         if minutes == 0:
             return f"{secs}s"
         return f"{minutes}m {secs}s"
+
+    def _normalize_task_status(self, status: Optional[str]) -> str:
+        """Normalize API status labels to UI-friendly values."""
+        if not status:
+            return "pending"
+        normalized = str(status).strip().upper()
+        mapping = {
+            "PENDING": "pending",
+            "STARTED": "running",
+            "SUCCESS": "completed",
+            "FAILURE": "failed",
+            "CANCELLED": "failed",
+            "CANCELED": "failed",
+            "HOLD": "pending",
+        }
+        if normalized in mapping:
+            return mapping[normalized]
+        lowered = str(status).strip().lower()
+        if lowered in {"pending", "running", "completed", "failed"}:
+            return lowered
+        return "pending"
+
+    @rx.var
+    def total_task_count(self) -> int:
+        """Total number of tasks in history."""
+        return len(self.task_history)
+
+    @rx.var
+    def running_task_count(self) -> int:
+        """Count of running tasks."""
+        return sum(1 for task in self.task_history if task.get("status") == "running")
+
+    @rx.var
+    def completed_task_count(self) -> int:
+        """Count of completed tasks."""
+        return sum(1 for task in self.task_history if task.get("status") == "completed")
+
+    @rx.var
+    def pending_task_count(self) -> int:
+        """Count of pending tasks."""
+        return sum(1 for task in self.task_history if task.get("status") == "pending")
         
     # ----- Auth / Session helpers -----
     async def initialize_auth(self):
@@ -410,7 +451,7 @@ class AppState(rx.State):
         
         # Validate models
         for model in self.models:
-            if not model.get("name") or not model.get("api_key"):
+            if not model.get("name") or not model.get("api_key") or not model.get("api_base"):
                 return rx.toast.error("Please fill in all model fields")
         
         self.is_submitting = True
@@ -422,9 +463,9 @@ class AppState(rx.State):
                 "models": [
                     {
                         "name": model["name"],
-                        "type": model["model_type"],
-                        "base_url": model.get("api_base", ""),
-                        "api_key": model["api_key"]
+                        "api_base": model.get("api_base", ""),
+                        "api_key": model["api_key"],
+                        "model_type": model["model_type"],
                     }
                     for model in self.models
                 ]
@@ -432,32 +473,49 @@ class AppState(rx.State):
             
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
                 response = await client.post(
-                    f"{self.api_base_url}/hret/evaluate",
+                    f"{self.api_base_url}/api/v1/leaderboard/generate",
                     json=payload,
                     headers=self._auth_headers(),
                 )
                 
-                if response.status_code == 200:
-                    result = response.json()
+                if response.status_code in (200, 202):
+                    try:
+                        result = response.json() if response.content else {}
+                    except Exception:
+                        result = {}
                     task_id = result.get("task_id")
+                    if not task_id:
+                        return rx.toast.error("Failed to start evaluation: missing task ID")
+                    normalized_status = self._normalize_task_status(result.get("status"))
                     
                     # Add task to history
                     new_task = {
                         "id": task_id,
-                        "status": "pending",
-                        "progress": 0,
+                        "status": normalized_status,
+                        "progress": 100 if normalized_status == "completed" else 0,
                         "model_name": ", ".join([m["name"] for m in self.models]),
                         "query": self.query,
                         "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        "estimated_time": result.get("estimated_duration", "Unknown")
+                        "estimated_time": result.get("estimated_duration", "Unknown"),
                     }
                     
                     self.task_history = [new_task] + self.task_history
                     self.current_task_id = task_id
-                    
-                    return rx.toast.success(f"Evaluation started! Task ID: {task_id}")
+
+                    self.current_page = "status"
+
+                    toast_message = (
+                        f"Evaluation completed! Task ID: {task_id}"
+                        if normalized_status == "completed"
+                        else f"Evaluation started! Task ID: {task_id}"
+                    )
+                    return rx.toast.success(toast_message)
                 else:
-                    error_msg = response.json().get("detail", "Unknown error")
+                    try:
+                        error_payload = response.json()
+                        error_msg = error_payload.get("detail") or error_payload.get("message") or "Unknown error"
+                    except Exception:
+                        error_msg = response.text or "Unknown error"
                     return rx.toast.error(f"Failed to start evaluation: {error_msg}")
                     
         except httpx.TimeoutException:
@@ -472,24 +530,42 @@ class AppState(rx.State):
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
                 response = await client.get(
-                    f"{self.api_base_url}/hret/evaluate/{task_id}",
+                    f"{self.api_base_url}/api/v1/tasks/{task_id}",
                     headers=self._auth_headers(),
                 )
                 
                 if response.status_code == 200:
                     task_data = response.json()
+                    normalized_status = self._normalize_task_status(task_data.get("status"))
                     
                     # Update task in history
                     for i, task in enumerate(self.task_history):
                         if task["id"] == task_id:
+                            progress = task.get("progress", 0)
+                            if normalized_status == "completed":
+                                progress = 100
+                            elif normalized_status == "pending":
+                                progress = 0
+                            elif normalized_status == "running" and progress == 0:
+                                progress = 50
+
                             self.task_history[i].update({
-                                "status": task_data.get("status", "unknown"),
-                                "progress": task_data.get("progress", {}).get("percentage", 0),
+                                "status": normalized_status,
+                                "progress": progress,
+                                "created_at": task_data.get("created_at", task.get("created_at")),
                             })
                             break
                             
         except Exception as e:
             print(f"Error refreshing task status: {e}")
+
+    async def refresh_current_task(self):
+        """Refresh status for the most recent task."""
+        if self.current_task_id:
+            return await self.refresh_task_status(self.current_task_id)
+        if self.task_history:
+            return await self.refresh_task_status(self.task_history[0].get("id"))
+        return rx.toast.info("No tasks to refresh.")
     
     async def load_leaderboard_data(self):
         """Load leaderboard data from backend."""
@@ -910,14 +986,27 @@ def task_status_card(task: rx.Var[dict]) -> rx.Component:
 def status_page() -> rx.Component:
     """Task status monitoring page."""
     return rx.vstack(
-        rx.heading("📊 Task Status", size="6", margin_bottom="1rem"),
+        rx.hstack(
+            rx.heading("📊 Task Status", size="6"),
+            rx.spacer(),
+            rx.button(
+                "Refresh Status",
+                variant="outline",
+                size="2",
+                on_click=AppState.refresh_current_task,
+                disabled=rx.cond(AppState.total_task_count == 0, True, False),
+            ),
+            width="100%",
+            align="center",
+            margin_bottom="1rem",
+        ),
         
         # Summary stats
         rx.grid(
             rx.card(
                 rx.vstack(
                     rx.text("Total Tasks", size="2", color="gray"),
-                    rx.text(AppState.task_history.length(), size="6", weight="bold"),
+                    rx.text(AppState.total_task_count, size="6", weight="bold"),
                     align="center",
                     spacing="1",
                 ),
@@ -926,7 +1015,7 @@ def status_page() -> rx.Component:
             rx.card(
                 rx.vstack(
                     rx.text("Running", size="2", color="gray"),
-                    rx.text("1", size="6", weight="bold", color="blue"),
+                    rx.text(AppState.running_task_count, size="6", weight="bold", color="blue"),
                     align="center",
                     spacing="1",
                 ),
@@ -935,7 +1024,7 @@ def status_page() -> rx.Component:
             rx.card(
                 rx.vstack(
                     rx.text("Completed", size="2", color="gray"),
-                    rx.text("1", size="6", weight="bold", color="green"),
+                    rx.text(AppState.completed_task_count, size="6", weight="bold", color="green"),
                     align="center",
                     spacing="1",
                 ),
@@ -944,7 +1033,7 @@ def status_page() -> rx.Component:
             rx.card(
                 rx.vstack(
                     rx.text("Pending", size="2", color="gray"),
-                    rx.text("1", size="6", weight="bold", color="orange"),
+                    rx.text(AppState.pending_task_count, size="6", weight="bold", color="orange"),
                     align="center",
                     spacing="1",
                 ),
