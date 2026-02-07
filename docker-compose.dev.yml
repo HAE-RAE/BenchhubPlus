@@ -86,7 +86,7 @@ services:
       - /tmp:/tmp
     command: ["python", "-m", "celery", "-A", "apps.worker.celery_app", "worker", "--loglevel=debug", "--concurrency=1", "--queues", "evaluation,maintenance"]
 
-  # Streamlit Frontend (Development)
+  # Reflex Frontend (Development)
   reflex:
     build:
       context: .
@@ -96,11 +96,12 @@ services:
       - API_BASE_URL=http://backend:8000
     ports:
       - "3000:3000"
+      - "8002:8002"
     depends_on:
       - backend
     volumes:
       - ./apps/reflex_frontend:/app
-    command: ["reflex", "run", "--env", "dev", "--backend-host", "0.0.0.0", "--backend-port", "8001", "--frontend-host", "0.0.0.0", "--frontend-port", "3000", "--loglevel", "debug"]
+    command: ["reflex", "run", "--env", "dev", "--backend-host", "0.0.0.0", "--backend-port", "8002", "--frontend-port", "3000", "--loglevel", "debug"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
