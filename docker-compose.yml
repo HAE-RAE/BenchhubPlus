@@ -52,6 +52,7 @@ services:
       - API_PORT=8000
       - DEBUG=false
       - LOG_LEVEL=info
+      - FRONTEND_URL=http://localhost:3000
     ports:
       - "8000:8000"
     depends_on:
@@ -98,6 +99,7 @@ services:
       - API_BASE_URL=http://backend:8000
     ports:
       - "3000:3000"
+      - "8002:8002"
     depends_on:
       - backend
     healthcheck:

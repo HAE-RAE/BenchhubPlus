@@ -665,6 +665,8 @@ def header() -> rx.Component:
 
     return rx.box(
         rx.hstack(
+            rx.box(width="320px"),
+            rx.spacer(),
             rx.heading(
                 "🏆 BenchHub Plus",
                 size="8",
@@ -1571,7 +1573,7 @@ def index() -> rx.Component:
             ),
         ),
         
-        max_width="1200px",
+        size="4",
         padding="2rem",
     )
 

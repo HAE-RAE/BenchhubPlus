@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     nodejs \
     npm \
+    unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -26,11 +27,11 @@ RUN reflex init --loglevel debug
 RUN reflex export --frontend-only --no-zip
 
 # Expose ports
-EXPOSE 3000 8001
+EXPOSE 3000 8002
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:3000 || exit 1
 
 # Run Reflex
-CMD ["reflex", "run", "--env", "prod", "--backend-host", "0.0.0.0", "--backend-port", "8001", "--frontend-host", "0.0.0.0", "--frontend-port", "3000"]
+CMD ["reflex", "run", "--env", "prod", "--backend-host", "0.0.0.0", "--backend-port", "8002", "--frontend-port", "3000"]
