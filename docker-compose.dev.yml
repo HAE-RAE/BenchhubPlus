@@ -50,6 +50,7 @@ services:
       - DEBUG=true
       - LOG_LEVEL=debug
       - FRONTEND_URL=http://localhost:3000
+      - DEV_AUTH_BYPASS=true
     ports:
       - "8001:8000"
     depends_on:
@@ -102,6 +103,7 @@ services:
     container_name: benchhub_reflex_dev
     environment:
       - API_BASE_URL=http://backend:8000
+      - DEV_AUTH_BYPASS=true
     ports:
       - "3000:3000"
       - "8002:8002"

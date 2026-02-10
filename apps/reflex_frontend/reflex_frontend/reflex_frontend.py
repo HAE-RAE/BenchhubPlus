@@ -22,6 +22,7 @@ class AppState(rx.State):
     # API Configuration
     api_base_url: str = DEFAULT_API_BASE
     access_token: str = os.getenv("MANAGER_TOKEN", "")
+    dev_auth_bypass: bool = os.getenv("DEV_AUTH_BYPASS", "").lower() in {"1", "true", "yes"}
 
     # --- Auth state ---
     is_authenticated: bool = False
@@ -31,6 +32,7 @@ class AppState(rx.State):
     user_role: str = ""
     auth_checked: bool = False
     auth_error: str = ""
+    dev_login_value: str = "dev@local"
 
     # Current page
     current_page: str = "evaluation"
@@ -156,6 +158,10 @@ class AppState(rx.State):
     def set_access_token(self, value: str):
         """Set the auth token (e.g., from query param)."""
         self.access_token = value
+
+    def set_dev_login_value(self, value: str):
+        """Set dev login input value."""
+        self.dev_login_value = value
 
     def _auth_headers(self) -> Dict[str, str]:
         """Build authorization headers if token is available."""
@@ -291,7 +297,35 @@ class AppState(rx.State):
         self.auth_checked = True
 
     async def start_google_login(self):
+        if self.dev_auth_bypass:
+            return rx.toast.info("Use the dev login input to sign in.")
         return rx.redirect(f"{PUBLIC_API_BASE}/api/v1/auth/google/login")
+
+    async def dev_login(self):
+        """Development-only login using a simple input."""
+        if not self.dev_auth_bypass:
+            return rx.toast.error("Dev login is disabled")
+        email = (self.dev_login_value or "").strip()
+        if not email:
+            return rx.toast.error("Please enter an email (any value is accepted)")
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                response = await client.post(
+                    f"{self.api_base_url}/api/v1/auth/dev-login",
+                    json={"email": email, "name": email},
+                )
+            if response.status_code != 200:
+                detail = response.json().get("detail", "Dev login failed")
+                return rx.toast.error(detail)
+            data = response.json()
+            token = data.get("access_token")
+            if not token:
+                return rx.toast.error("Dev login failed: missing token")
+            self.access_token = token
+            self.auth_error = ""
+            return await self.initialize_auth()
+        except Exception as e:
+            return rx.toast.error(f"Dev login failed: {e}")
 
     async def logout(self):
         """Logout locally by clearing auth state and reloading the app."""
@@ -853,21 +887,44 @@ def header() -> rx.Component:
         rx.fragment(),
     )
 
+    dev_login_controls = rx.hstack(
+        rx.input(
+            placeholder="dev email",
+            value=AppState.dev_login_value,
+            on_change=AppState.set_dev_login_value,
+            width="200px",
+            size="2",
+        ),
+        rx.button(
+            "Dev Login",
+            variant="solid",
+            color_scheme="blue",
+            size="2",
+            on_click=AppState.dev_login,
+        ),
+        spacing="2",
+        align="center",
+    )
+
     auth_button = rx.cond(
         AppState.is_authenticated,
         rx.button(
-            "Logout🔓",
+            "Logout??",
             variant="outline",
             color_scheme="blue",
             size="2",
             on_click=AppState.logout,
         ),
-        rx.button(
-            "Login🔒",
-            variant="solid",
-            color_scheme="blue",
-            size="2",
-            on_click=AppState.start_google_login,
+        rx.cond(
+            AppState.dev_auth_bypass,
+            dev_login_controls,
+            rx.button(
+                "Login??",
+                variant="solid",
+                color_scheme="blue",
+                size="2",
+                on_click=AppState.start_google_login,
+            ),
         ),
     )
 
@@ -975,10 +1032,29 @@ def login_required_card(message: str) -> rx.Component:
         rx.vstack(
             rx.heading("Login required", size="5"),
             rx.text(message, color="gray"),
-            rx.button(
-                "Login",
-                on_click=AppState.start_google_login,
-                color_scheme="blue",
+            rx.cond(
+                AppState.dev_auth_bypass,
+                rx.hstack(
+                    rx.input(
+                        placeholder="dev email",
+                        value=AppState.dev_login_value,
+                        on_change=AppState.set_dev_login_value,
+                        width="220px",
+                        size="2",
+                    ),
+                    rx.button(
+                        "Dev Login",
+                        on_click=AppState.dev_login,
+                        color_scheme="blue",
+                    ),
+                    spacing="2",
+                    align="center",
+                ),
+                rx.button(
+                    "Login",
+                    on_click=AppState.start_google_login,
+                    color_scheme="blue",
+                ),
             ),
             spacing="2",
             align="start",
@@ -1884,28 +1960,32 @@ def manager_coverage_section() -> rx.Component:
 def manager_page() -> rx.Component:
     """Main manager dashboard layout."""
     return rx.cond(
-        AppState.is_admin_user,
-        rx.vstack(
-            rx.heading("🛠 Manager Console", size="6", margin_bottom="1rem"),
-            manager_health_section(),
-            manager_tasks_section(),
-            manager_coverage_section(),
-            spacing="4",
-            width="100%",
-        ),
-        rx.card(
+        AppState.is_authenticated,
+        rx.cond(
+            AppState.is_admin_user,
             rx.vstack(
-                rx.heading("Admin access required", size="5"),
-                rx.text(
-                    "Log in with an admin account to access the Manager console.",
-                    color="gray",
-                ),
-                spacing="2",
-                align="start",
+                rx.heading("🛠 Manager Console", size="6", margin_bottom="1rem"),
+                manager_health_section(),
+                manager_tasks_section(),
+                manager_coverage_section(),
+                spacing="4",
                 width="100%",
             ),
-            width="100%",
+            rx.card(
+                rx.vstack(
+                    rx.heading("Admin access required", size="5"),
+                    rx.text(
+                        "Log in with an admin account to access the Manager console.",
+                        color="gray",
+                    ),
+                    spacing="2",
+                    align="start",
+                    width="100%",
+                ),
+                width="100%",
+            ),
         ),
+        login_required_card("Please log in to access the Manager console."),
     )
 
 

@@ -6,6 +6,7 @@ from typing import Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, Field
 
 from ...core.config import get_settings
 from ...core.db import User, Organization, Workspace, WorkspaceMembership, get_db
@@ -81,9 +82,21 @@ def _ensure_default_workspace(user: User, db: Session) -> None:
         db.commit()
 
 
+class DevLoginRequest(BaseModel):
+    """Payload for development-only login."""
+
+    email: str = Field(..., min_length=1)
+    name: Optional[str] = None
+
+
 @router.get("/google/login", status_code=status.HTTP_302_FOUND)
 async def google_login():
     """Redirect to Google OAuth login page."""
+    if settings.debug or settings.dev_auth_bypass:
+        # Dev-only: skip Google OAuth and use a default dev user.
+        redirect_url = f"{settings.frontend_url}?dev_login=true"
+        return RedirectResponse(url=redirect_url)
+
     google_auth_url = (
         "https://accounts.google.com/o/oauth2/v2/auth?"
         f"client_id={settings.google_client_id}&"
@@ -99,6 +112,8 @@ async def google_login():
 @router.get("/google/callback", status_code=status.HTTP_302_FOUND)
 async def google_callback(code: str, db: Session = Depends(get_db)):
     """Handle Google OAuth callback and authenticate user."""
+    if settings.debug or settings.dev_auth_bypass:
+        raise HTTPException(status_code=400, detail="Google OAuth disabled in dev mode")
     try:
         google_user = await get_google_user_info(code)
         logger.info(f"Google OAuth successful for email: {google_user.get('email')}")
@@ -226,3 +241,54 @@ async def logout():
     
     logger.info("User logged out")
     return response
+
+
+@router.post("/dev-login")
+async def dev_login(
+    payload: DevLoginRequest,
+    db: Session = Depends(get_db),
+):
+    """Development-only login that accepts any input."""
+    if not (settings.debug or settings.dev_auth_bypass):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    email = payload.email.strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(
+            google_id=f"dev:{email}",
+            email=email,
+            email_verified=True,
+            full_name=payload.name or email,
+            picture_url=None,
+            is_active=True,
+            role="admin",
+            is_admin=True,
+            last_login_at=datetime.now(timezone.utc),
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    else:
+        user.full_name = payload.name or user.full_name
+        user.last_login_at = datetime.now(timezone.utc)
+        user.role = "admin"
+        user.is_admin = True
+        db.commit()
+
+    _ensure_default_workspace(user, db)
+
+    access_token = create_jwt_token(user.id, user.email)
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "name": user.full_name,
+            "role": user.role,
+        },
+    }

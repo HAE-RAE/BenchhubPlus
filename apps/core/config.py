@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     api_host: str = Field(default="0.0.0.0", description="API host")
     api_port: int = Field(default=8000, description="API port")
     debug: bool = Field(default=False, description="Debug mode")
+    dev_auth_bypass: bool = Field(
+        default=False,
+        description="Enable development auth bypass (non-production only)"
+    )
     
     # Frontend Configuration
     frontend_host: str = Field(default="0.0.0.0", description="Frontend host")
