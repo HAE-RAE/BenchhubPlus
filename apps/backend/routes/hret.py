@@ -10,10 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
-from ...core.db import get_db, EvaluationTask
+from ...core.db import get_db, EvaluationTask, User
 from ...core.schemas import ModelInfo
 from ...worker.celery_app import celery_app
 from ...worker.hret_runner import HRETRunner, HRET_AVAILABLE
+from ..dependencies import get_current_user
 from ...worker.hret_config import HRETConfigManager
 from ...worker.hret_storage import HRETStorageManager
 from ...worker.hret_mapper import HRETResultMapper
@@ -63,7 +64,9 @@ class HRETConfigResponse(BaseModel):
 
 
 @router.get("/status", response_model=Dict[str, Any])
-async def get_hret_status():
+async def get_hret_status(
+    current_user: User = Depends(get_current_user),
+):
     """Get HRET integration status."""
     
     return {
@@ -80,7 +83,9 @@ async def get_hret_status():
 
 
 @router.get("/config", response_model=HRETConfigResponse)
-async def get_hret_config():
+async def get_hret_config(
+    current_user: User = Depends(get_current_user),
+):
     """Get HRET configuration information."""
     
     if not HRET_AVAILABLE:
@@ -113,7 +118,8 @@ async def get_hret_config():
 async def start_hret_evaluation(
     request: HRETEvaluationRequest,
     background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Start HRET evaluation task."""
     
@@ -179,7 +185,8 @@ async def start_hret_evaluation(
 @router.get("/evaluate/{task_id}", response_model=HRETStatusResponse)
 async def get_hret_evaluation_status(
     task_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Get HRET evaluation task status."""
     
@@ -192,16 +199,23 @@ async def get_hret_evaluation_status(
         
         # Parse result if available
         result = None
+        progress = None
         if task.result:
             try:
-                result = json.loads(task.result)
+                parsed = json.loads(task.result)
             except json.JSONDecodeError:
-                result = {"raw_result": task.result}
+                parsed = {"raw_result": task.result}
+
+            if isinstance(parsed, dict):
+                progress = parsed.get("progress")
+                result = parsed.get("results", parsed)
+            else:
+                result = parsed
         
         return HRETStatusResponse(
             task_id=task.task_id,
             status=task.status,
-            progress=None,  # TODO: Implement progress tracking
+            progress=progress,
             result=result,
             error=task.error_message,
             created_at=task.created_at,
@@ -221,7 +235,10 @@ class PlanValidationRequest(BaseModel):
 
 
 @router.post("/validate-plan")
-async def validate_hret_plan(request: PlanValidationRequest):
+async def validate_hret_plan(
+    request: PlanValidationRequest,
+    current_user: User = Depends(get_current_user),
+):
     """Validate HRET plan configuration."""
     
     if not HRET_AVAILABLE:
@@ -251,7 +268,8 @@ async def validate_hret_plan(request: PlanValidationRequest):
 async def get_hret_results(
     model_name: Optional[str] = None,
     dataset_name: Optional[str] = None,
-    limit: int = 100
+    limit: int = 100,
+    current_user: User = Depends(get_current_user),
 ):
     """Get HRET evaluation results."""
     
@@ -282,7 +300,8 @@ async def get_hret_results(
 async def get_hret_leaderboard(
     language: Optional[str] = None,
     subject_type: Optional[str] = None,
-    task_type: Optional[str] = None
+    task_type: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
 ):
     """Get HRET-based leaderboard data."""
     
@@ -324,11 +343,26 @@ async def run_hret_evaluation_task(
         from ...core.db import SessionLocal
         db = SessionLocal()
         
+        def _update_progress(stage: str, current: int, total: int) -> None:
+            if not task:
+                return
+            payload = {
+                "progress": {
+                    "stage": stage,
+                    "current": current,
+                    "total": total,
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
+            }
+            task.result = json.dumps(payload)
+            db.commit()
+
         # Update task status to STARTED
         task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
         if task:
             task.status = "STARTED"
             db.commit()
+            _update_progress("initializing", 0, len(models))
         
         # Run HRET evaluation
         runner = HRETRunner()
@@ -339,6 +373,7 @@ async def run_hret_evaluation_task(
             models=models,
             timeout=timeout_seconds
         )
+        _update_progress("mapping", 1, len(models))
         
         # Store results if requested
         if store_results:

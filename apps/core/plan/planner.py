@@ -125,16 +125,29 @@ Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Cu
 
 def build_plan_yaml(plan_config: PlanConfig, models: List[ModelInfo]) -> str:
     """Generate HRET-compatible plan.yaml from configuration and models."""
-
-    # TODO: This is a placeholder implementation
-    # In a real implementation, this would generate proper HRET configuration
-    # based on BenchHub data structure and HRET requirements
+    language_map = {
+        "korean": "ko",
+        "ko": "ko",
+        "english": "en",
+        "en": "en",
+        "japanese": "ja",
+        "ja": "ja",
+        "chinese": "zh",
+        "zh": "zh",
+    }
+    language_raw = (plan_config.language or "Korean").strip()
+    language_key = language_raw.lower()
+    target_lang = language_map.get(language_key, language_key)
+    evaluation_method = "string_match" if plan_config.problem_type == "MCQA" else "llm_judge"
 
     plan_data = {
         "version": "2.0",
         "metadata": {
             "name": f"BenchHub Plus Evaluation - {plan_config.task_type}",
-            "description": f"Evaluation plan for {plan_config.language} {'/'.join(plan_config.subject_type)} {plan_config.task_type}",
+            "description": (
+                f"Evaluation plan for {plan_config.language} "
+                f"{'/'.join(plan_config.subject_type)} {plan_config.task_type}"
+            ),
             "created_by": "BenchHub Plus Planner Agent",
             "language": plan_config.language,
             "problem_type": plan_config.problem_type,
@@ -143,7 +156,11 @@ def build_plan_yaml(plan_config: PlanConfig, models: List[ModelInfo]) -> str:
             "task_type": plan_config.task_type,
             "external_tool_usage": plan_config.external_tool_usage,
             "sample_size": plan_config.sample_size,
-            "seed": plan_config.seed
+            "seed": plan_config.seed,
+            "evaluation_method": evaluation_method,
+            "language_penalize": True,
+            "target_lang": target_lang,
+            "few_shot_num": 0,
         },
         "models": [],
         "datasets": [
@@ -158,12 +175,13 @@ def build_plan_yaml(plan_config: PlanConfig, models: List[ModelInfo]) -> str:
                     "external_tool_usage": plan_config.external_tool_usage,
                     "language": plan_config.language
                 },
+                "params": {},
                 "sample_size": plan_config.sample_size,
                 "seed": plan_config.seed
             }
         ],
         "evaluation": {
-            "method": "string_match" if plan_config.problem_type == "MCQA" else "llm_judge",
+            "method": evaluation_method,
             "judge_model": "gpt-4" if plan_config.problem_type != "MCQA" else None,
             "criteria": [
                 "correctness",

@@ -152,7 +152,7 @@ async def health_check(request: Request, response: Response, db: Session = Depen
 async def get_task_status(
     task_id: str = Path(..., description="Task ID"),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Get status of evaluation task."""
     
@@ -398,7 +398,10 @@ async def cancel_task(
 
 
 @router.get("/stats")
-async def get_system_stats(db: Session = Depends(get_db)):
+async def get_system_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Get comprehensive system statistics."""
     
     try:

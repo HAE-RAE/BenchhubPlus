@@ -20,7 +20,7 @@ from ...core.schemas import (
 )
 from ...core.security import rate_limiter
 from ..services.orchestrator import EvaluationOrchestrator
-from ..dependencies import get_optional_user, require_admin
+from ..dependencies import get_current_user, require_admin
 from ..services.audit import AuditService
 from ..repositories.leaderboard_repo import LeaderboardRepository
 
@@ -45,7 +45,7 @@ async def generate_leaderboard(
     query: LeaderboardQuery,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Generate leaderboard for given query and models."""
 
@@ -72,8 +72,7 @@ async def generate_leaderboard(
 
     try:
         orchestrator = EvaluationOrchestrator(db)
-        user_id = current_user.id if current_user else None
-        result = orchestrator.generate_leaderboard(query, user_id=user_id)
+        result = orchestrator.generate_leaderboard(query, user_id=current_user.id)
 
         logger.info(f"Generated leaderboard task: {result.task_id}")
         response_headers = {}
@@ -102,7 +101,7 @@ async def browse_leaderboard(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of entries"),
     include_quarantined: bool = Query(False, description="Include quarantined entries"),
     db: Session = Depends(get_db),
-    current_user: Optional[User] = Depends(get_optional_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Browse existing leaderboard entries with optional filtering."""
     
@@ -133,7 +132,8 @@ async def browse_leaderboard(
 @router.post("/suggest", response_model=LeaderboardSuggestionResponse)
 async def suggest_leaderboard_filters(
     payload: LeaderboardSuggestionRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Suggest leaderboard filters derived from a natural language query."""
     
@@ -152,7 +152,10 @@ async def suggest_leaderboard_filters(
 
 
 @router.get("/categories")
-async def get_categories(db: Session = Depends(get_db)):
+async def get_categories(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Get available categories (languages, subjects, tasks)."""
     
     try:
@@ -176,7 +179,10 @@ async def get_categories(db: Session = Depends(get_db)):
 
 
 @router.get("/stats")
-async def get_leaderboard_stats(db: Session = Depends(get_db)):
+async def get_leaderboard_stats(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Get leaderboard statistics."""
     
     try:

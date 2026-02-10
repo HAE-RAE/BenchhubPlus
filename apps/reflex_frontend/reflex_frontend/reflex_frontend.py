@@ -495,6 +495,8 @@ class AppState(rx.State):
     
     async def submit_evaluation(self):
         """Submit evaluation request to backend API."""
+        if not self.is_authenticated:
+            return rx.toast.error("Please log in to start an evaluation")
         if not self.query.strip():
             return rx.toast.error("Please enter a query")
         
@@ -579,6 +581,8 @@ class AppState(rx.State):
     
     async def refresh_task_status(self, task_id: str):
         """Refresh status of a specific task."""
+        if not self.is_authenticated:
+            return rx.toast.error("Please log in to view task status")
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
                 response = await client.get(
@@ -613,6 +617,8 @@ class AppState(rx.State):
 
     async def refresh_current_task(self):
         """Refresh status for the most recent task."""
+        if not self.is_authenticated:
+            return rx.toast.error("Please log in to view task status")
         if self.current_task_id:
             return await self.refresh_task_status(self.current_task_id)
         if self.task_history:
@@ -652,6 +658,8 @@ class AppState(rx.State):
 
     async def load_leaderboard_categories(self):
         """Load distinct category options for filters."""
+        if not self.is_authenticated:
+            return rx.toast.error("Please log in to browse leaderboards")
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
                 response = await client.get(
@@ -679,6 +687,8 @@ class AppState(rx.State):
 
     async def suggest_leaderboard_filters(self):
         """Use planner agent to suggest filters from natural language query."""
+        if not self.is_authenticated:
+            return rx.toast.error("Please log in to use planner filters")
         if not self.leaderboard_query.strip():
             return rx.toast.error("Please enter a query")
 
@@ -738,6 +748,8 @@ class AppState(rx.State):
     
     async def load_leaderboard_data(self):
         """Load leaderboard data from backend using current filters."""
+        if not self.is_authenticated:
+            return rx.toast.error("Please log in to browse leaderboards")
         self.leaderboard_loading = True
         try:
             if (
@@ -955,6 +967,26 @@ def navigation() -> rx.Component:
     )
 
 
+
+
+def login_required_card(message: str) -> rx.Component:
+    """Shared login required callout."""
+    return rx.card(
+        rx.vstack(
+            rx.heading("Login required", size="5"),
+            rx.text(message, color="gray"),
+            rx.button(
+                "Login",
+                on_click=AppState.start_google_login,
+                color_scheme="blue",
+            ),
+            spacing="2",
+            align="start",
+            width="100%",
+        ),
+        width="100%",
+    )
+
 def model_form(index: rx.Var[int]) -> rx.Component:
     """Individual model configuration form."""
     return rx.card(
@@ -1039,7 +1071,9 @@ def model_form(index: rx.Var[int]) -> rx.Component:
 
 def evaluation_page() -> rx.Component:
     """Evaluation request page."""
-    return rx.vstack(
+    return rx.cond(
+        AppState.is_authenticated,
+        rx.vstack(
         rx.heading("📝 Evaluation Request", size="6", margin_bottom="1rem"),
         
         # Query input
@@ -1125,7 +1159,9 @@ def evaluation_page() -> rx.Component:
         spacing="4",
     )
 
-
+,
+        login_required_card("Please log in to create a new evaluation."),
+    )
 def task_status_card(task: rx.Var[dict]) -> rx.Component:
     """Individual task status card."""
     return rx.card(
@@ -1216,7 +1252,9 @@ def task_status_card(task: rx.Var[dict]) -> rx.Component:
 
 def status_page() -> rx.Component:
     """Task status monitoring page."""
-    return rx.vstack(
+    return rx.cond(
+        AppState.is_authenticated,
+        rx.vstack(
         rx.hstack(
             rx.heading("📊 Task Status", size="6"),
             rx.spacer(),
@@ -1305,7 +1343,9 @@ def status_page() -> rx.Component:
         spacing="4",
     )
 
-
+,
+        login_required_card("Please log in to view task status."),
+    )
 def leaderboard_table_row(entry: rx.Var[dict]) -> rx.Component:
     """Leaderboard row for browse table."""
     return rx.table.row(
@@ -1323,7 +1363,9 @@ def leaderboard_table_row(entry: rx.Var[dict]) -> rx.Component:
 
 def leaderboard_page() -> rx.Component:
     """Leaderboard browsing page."""
-    return rx.vstack(
+    return rx.cond(
+        AppState.is_authenticated,
+        rx.vstack(
         rx.heading("?? Browse Leaderboards", size="6", margin_bottom="1rem"),
         
         # Leaderboard table
@@ -1527,7 +1569,9 @@ def leaderboard_page() -> rx.Component:
         spacing="4",
     )
 
-
+,
+        login_required_card("Please log in to browse leaderboards."),
+    )
 def manager_status_card(title: str, value: rx.Var[str], description: str = "") -> rx.Component:
     """Render subsystem status badges."""
     return rx.card(
