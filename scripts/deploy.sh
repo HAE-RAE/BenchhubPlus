@@ -60,6 +60,14 @@ for var in "${required_vars[@]}"; do
     fi
 done
 
+# Optional: model prefetch for HRET
+if [ -n "${HRET_PREFETCH_MODEL}" ]; then
+    echo -e "${YELLOW}?뱟 HRET prefetch enabled: ${HRET_PREFETCH_MODEL}${NC}"
+    if [ -n "${HRET_PREFETCH_REVISION}" ]; then
+        echo -e "${YELLOW}  - revision: ${HRET_PREFETCH_REVISION}${NC}"
+    fi
+fi
+
 # Choose docker-compose file based on environment
 if [ "$ENVIRONMENT" = "development" ]; then
     COMPOSE_FILE="docker-compose.dev.yml"

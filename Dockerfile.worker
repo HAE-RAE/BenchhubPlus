@@ -3,12 +3,19 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (HRET/tooling + ML runtime)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     curl \
     git \
+    git-lfs \
+    libgomp1 \
+    libstdc++6 \
+    libglib2.0-0 \
+    libgl1 \
+    libffi-dev \
+    libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -17,6 +24,27 @@ COPY README.md ./
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -e .
+
+# Optional: prefetch model weights for HRET (set build args to enable)
+ARG HRET_PREFETCH_MODEL=""
+ARG HRET_PREFETCH_REVISION=""
+ENV HF_HOME=/app/.cache/huggingface \
+    TRANSFORMERS_CACHE=/app/.cache/huggingface \
+    HF_HUB_DISABLE_TELEMETRY=1 \
+    TOKENIZERS_PARALLELISM=false
+
+RUN if [ -n "$HRET_PREFETCH_MODEL" ]; then \
+    HRET_PREFETCH_MODEL="$HRET_PREFETCH_MODEL" HRET_PREFETCH_REVISION="$HRET_PREFETCH_REVISION" \
+    python - <<'PY'
+import os
+from transformers import AutoModel, AutoTokenizer
+model = os.environ.get('HRET_PREFETCH_MODEL')
+revision = os.environ.get('HRET_PREFETCH_REVISION') or None
+if model:
+    AutoTokenizer.from_pretrained(model, revision=revision)
+    AutoModel.from_pretrained(model, revision=revision)
+PY
+    ; fi
 
 # Copy application code
 COPY apps/ ./apps/

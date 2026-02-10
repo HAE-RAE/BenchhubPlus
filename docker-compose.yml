@@ -69,6 +69,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.worker
+      args:
+        HRET_PREFETCH_MODEL: ${HRET_PREFETCH_MODEL:-}
+        HRET_PREFETCH_REVISION: ${HRET_PREFETCH_REVISION:-}
     container_name: benchhub_worker
     environment:
       - DATABASE_URL=postgresql://benchhub:${POSTGRES_PASSWORD:-benchhub_password}@postgres:5432/benchhub_plus
@@ -77,6 +80,10 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - DEBUG=false
       - LOG_LEVEL=info
+      - HF_HOME=/app/.cache/huggingface
+      - TRANSFORMERS_CACHE=/app/.cache/huggingface
+      - HF_HUB_DISABLE_TELEMETRY=1
+      - TOKENIZERS_PARALLELISM=false
     depends_on:
       postgres:
         condition: service_healthy
@@ -87,6 +94,7 @@ services:
     volumes:
       - ./logs:/app/logs
       - /tmp:/tmp  # For temporary files during evaluation
+      - hf_cache:/app/.cache/huggingface
     restart: unless-stopped
 
   # Reflex Frontend
@@ -141,6 +149,8 @@ volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  hf_cache:
     driver: local
 
 networks:

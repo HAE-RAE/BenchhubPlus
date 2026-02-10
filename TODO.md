@@ -17,9 +17,9 @@
 ## 2. 평가 파이프라인 완성
 - [X] **Planner fallback이 `plan_yaml`을 생성하도록 수정**  
   - [X] `apps/backend/services/orchestrator.py:271` 의 `_create_fallback_plan` 이 `plan_yaml` 없이 JSON만 반환하여 Celery 작업이 즉시 실패함; 최소한 기본 BenchHub plan YAML을 생성해 포함.
-- [O] **HRET 실행 의존성 정리**  
-  - [O] `apps/worker/hret_runner.py` 는 `haerae-evaluation-toolkit (llm_eval)` 미설치 시 RuntimeError 발생. `pyproject.toml` 의 주석 처리된 의존성을 복구하거나 대체 실행기를 번들링.  
-  - [O] `Dockerfile.worker` 와 배포 스크립트에 필요한 OS 패키지/모델 가중치 준비 단계 추가.
+- [X] **HRET 실행 의존성 정리**  
+  - [X] `apps/worker/hret_runner.py` 는 `haerae-evaluation-toolkit (llm_eval)` 미설치 시 RuntimeError 발생. `pyproject.toml` 의 주석 처리된 의존성을 복구하거나 대체 실행기를 번들링.  
+  - [X] `Dockerfile.worker` 와 배포 스크립트에 필요한 OS 패키지/모델 가중치 준비 단계 추가.
 - [X] **결과 저장 로직 구현**  
   - [X] HRET 결과(`HRETResultMapper`)를 통해 ExperimentSample / LeaderboardCache에 저장하도록 통합.  
   - [X] Runner → Mapper → Storage 파이프라인을 연결하고 task_id 연동.
