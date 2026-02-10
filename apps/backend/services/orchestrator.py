@@ -277,6 +277,8 @@ class EvaluationOrchestrator:
         """Create fallback plan when planner agent is not available."""
         plan_config = self._default_plan_config()
         plan_yaml = build_plan_yaml(plan_config, secure_models)
+        if not plan_yaml:
+            raise RuntimeError("Fallback plan_yaml generation returned empty content")
 
         fallback_plan = {
             "query": query.query,

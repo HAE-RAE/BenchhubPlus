@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
@@ -7,7 +8,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from ...core.config import get_settings
-from ...core.db import User, get_db
+from ...core.db import User, Organization, Workspace, WorkspaceMembership, get_db
 from ...core.schemas import ErrorResponse, UserResponse
 from ...core.security import (
     create_jwt_token,
@@ -19,6 +20,65 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
+
+
+def _slugify(value: str) -> str:
+    """Create a URL-safe slug."""
+    normalized = re.sub(r"[^a-zA-Z0-9]+", "-", (value or "").strip().lower())
+    return normalized.strip("-") or "org"
+
+
+def _ensure_default_workspace(user: User, db: Session) -> None:
+    """Ensure user has a default organization/workspace and membership."""
+    org = None
+    if user.default_org_id:
+        org = db.query(Organization).filter(Organization.id == user.default_org_id).first()
+
+    if org is None:
+        org_slug = f"user-{user.id}"
+        org_name = user.full_name or user.email or f"user-{user.id}"
+        org = Organization(name=org_name, slug=_slugify(org_slug))
+        db.add(org)
+        db.commit()
+        db.refresh(org)
+
+    workspace = None
+    if user.default_workspace_id:
+        workspace = db.query(Workspace).filter(Workspace.id == user.default_workspace_id).first()
+
+    if workspace is None:
+        workspace_slug = f"default-{user.id}"
+        workspace = Workspace(
+            organization_id=org.id,
+            name="Default",
+            slug=_slugify(workspace_slug),
+        )
+        db.add(workspace)
+        db.commit()
+        db.refresh(workspace)
+
+    membership = (
+        db.query(WorkspaceMembership)
+        .filter(
+            WorkspaceMembership.workspace_id == workspace.id,
+            WorkspaceMembership.user_id == user.id,
+        )
+        .first()
+    )
+    if membership is None:
+        membership = WorkspaceMembership(
+            workspace_id=workspace.id,
+            user_id=user.id,
+            role="owner",
+            is_owner=True,
+        )
+        db.add(membership)
+        db.commit()
+
+    if user.default_org_id != org.id or user.default_workspace_id != workspace.id:
+        user.default_org_id = org.id
+        user.default_workspace_id = workspace.id
+        db.commit()
 
 
 @router.get("/google/login", status_code=status.HTTP_302_FOUND)
@@ -68,6 +128,8 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
             user.picture_url = google_user.get("picture", user.picture_url)
             db.commit()
             logger.info(f"User logged in: {user.email}")
+
+        _ensure_default_workspace(user, db)
         
         access_token = create_jwt_token(user.id, user.email)
         
@@ -131,6 +193,9 @@ async def get_current_user(
             "name": user.full_name,
             "picture": user.picture_url,
             "email_verified": user.email_verified,
+            "role": user.role,
+            "organization_id": user.default_org_id,
+            "workspace_id": user.default_workspace_id,
             "created_at": user.created_at,
             "last_login_at": user.last_login_at
         }

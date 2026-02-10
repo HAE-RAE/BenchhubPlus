@@ -368,7 +368,7 @@ async def run_hret_evaluation_task(
                 storage_stats = storage_manager.store_evaluation_results(
                     model_results=mapped_model_results,
                     sample_results=mapped_sample_results,
-                    task_id=None,
+                    task_id=task_id,
                 )
                 results["storage_stats"] = storage_stats
 

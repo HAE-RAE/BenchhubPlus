@@ -6,12 +6,12 @@ This manual explains how to operate BenchHub Plus after you have started the sta
 
 ## 1. Launching & signing in
 
-BenchHub Plus does not require user accounts. Once the services are running, open your browser and go to the frontend URL:
+BenchHub Plus supports optional Google sign-in. You can run evaluations without logging in, but the Manager tab and admin actions require authentication. Once the services are running, open your browser and go to the frontend URL:
 
 - **Development (docker-compose.dev.yml)**: http://localhost:3000
 - **Production (docker-compose.yml)**: http://localhost:3000 (or via Nginx on http://localhost)
 
-You should see the BenchHub Plus header and a horizontal navigation menu with four tabs: **Evaluate**, **Status**, **Browse**, and **System**.
+You should see the BenchHub Plus header, a **Login** button, and a horizontal navigation menu with four tabs: **Evaluation**, **Status**, **Leaderboard**, and **Manager** (admin-only).
 
 > 💡 If the page does not load, verify that Docker containers are running (`docker-compose -f docker-compose.dev.yml ps`) and that the backend health check returns `{"status": "healthy"}`.
 
@@ -109,12 +109,12 @@ Expand the **Detailed Results** section to inspect the full JSON response. This 
 
 ---
 
-## 5. Browse tab – Explore past leaderboards
+## 5. Leaderboard tab – Explore past leaderboards
 
-The Browse tab queries the backend’s historical leaderboard API (`/api/v1/leaderboard/browse`).
+The Leaderboard tab queries the backend’s historical leaderboard API (`/api/v1/leaderboard/browse`).
 
 1. Pick filters for **Language**, **Subject**, **Task Type**, and **Max Results**.
-2. Click **🔍 Search Leaderboard** to execute the query.
+2. Click **🔍 Apply Filters** to execute the query.
 3. Review the results table (rank, model name, score, metadata, and last updated date).
 4. A horizontal bar chart highlights the top 10 models for quick comparison.
 
@@ -122,9 +122,9 @@ If no entries match the filters, the app shows a friendly message instead of an 
 
 ---
 
-## 6. System tab – Check health and capacity
+## 6. Manager tab – Check health and capacity
 
-Use this tab whenever something looks off.
+Use this tab whenever something looks off. You must be logged in as an admin to access it.
 
 - Calls `/api/v1/health` to summarize system health:
   - Database and Redis connectivity.
@@ -174,7 +174,7 @@ Everything the UI does is backed by REST endpoints. Useful ones include:
 | `POST /api/v1/leaderboard/generate` | Submit a new evaluation (same payload as the UI form). |
 | `GET /api/v1/tasks/<task_id>` | Poll task progress and fetch results. |
 | `GET /api/v1/leaderboard/browse` | Retrieve historical leaderboard entries. |
-| `GET /api/v1/health` | Check service health (used in System tab). |
+| `GET /api/v1/health` | Check service health (used in Manager tab). |
 
 See the [API Reference](./api-reference.md) for request/response schemas.
 

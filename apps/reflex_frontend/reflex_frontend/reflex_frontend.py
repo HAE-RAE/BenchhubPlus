@@ -28,7 +28,9 @@ class AppState(rx.State):
     user_email: str = ""
     user_name: str = ""
     user_picture: str = ""
+    user_role: str = ""
     auth_checked: bool = False
+    auth_error: str = ""
 
     # Current page
     current_page: str = "evaluation"
@@ -84,6 +86,19 @@ class AppState(rx.State):
     subject_filter: str = "All"
     task_type_filter: str = "All"
     max_results: int = 100
+    leaderboard_query: str = ""
+    leaderboard_query_description: str = ""
+    leaderboard_entries: List[Dict[str, Any]] = []
+    leaderboard_loading: bool = False
+    leaderboard_plan_summary: str = ""
+    leaderboard_used_planner: bool = False
+    leaderboard_confidence: float = 0.0
+    leaderboard_rationale: str = ""
+    leaderboard_suggest_error: str = ""
+    leaderboard_last_suggested: Optional[str] = None
+    leaderboard_language_options: List[str] = ["All"]
+    leaderboard_subject_options: List[str] = ["All"]
+    leaderboard_task_type_options: List[str] = ["All"]
 
     # Manager dashboard state (front-end only snapshot)
     manager_snapshot_loaded: bool = False
@@ -134,6 +149,10 @@ class AppState(rx.State):
         except ValueError:
             self.max_results = 100
 
+    def set_leaderboard_query(self, value: str):
+        """Set the leaderboard natural language filter query."""
+        self.leaderboard_query = value
+
     def set_access_token(self, value: str):
         """Set the auth token (e.g., from query param)."""
         self.access_token = value
@@ -144,6 +163,17 @@ class AppState(rx.State):
         if self.access_token:
             headers["Authorization"] = f"Bearer {self.access_token}"
         return headers
+
+    def _handle_auth_failure(self, message: str):
+        """Reset auth state and surface a message to the user."""
+        self.is_authenticated = False
+        self.access_token = ""
+        self.user_email = ""
+        self.user_name = ""
+        self.user_picture = ""
+        self.user_role = ""
+        self.auth_error = message
+        return rx.toast.error(message)
 
     def _format_duration(self, seconds: float) -> str:
         """Format duration seconds into label."""
@@ -195,6 +225,11 @@ class AppState(rx.State):
     def pending_task_count(self) -> int:
         """Count of pending tasks."""
         return sum(1 for task in self.task_history if task.get("status") == "pending")
+
+    @rx.var
+    def is_admin_user(self) -> bool:
+        """Check if the current user is an admin."""
+        return bool(self.is_authenticated and self.user_role == "admin")
         
     # ----- Auth / Session helpers -----
     async def initialize_auth(self):
@@ -219,6 +254,8 @@ class AppState(rx.State):
             self.user_email = ""
             self.user_name = ""
             self.user_picture = ""
+            self.user_role = ""
+            self.auth_error = ""
             self.auth_checked = True
             return
 
@@ -235,16 +272,21 @@ class AppState(rx.State):
                 self.user_email = data.get("email", "")
                 self.user_name = data.get("name", "")
                 self.user_picture = data.get("picture", "")
+                self.user_role = data.get("role") or ""
+                self.auth_error = ""
             else:
-                self.is_authenticated = False
-                self.access_token = ""
-                self.user_email = ""
-                self.user_name = ""
-                self.user_picture = ""
+                detail = ""
+                try:
+                    detail = resp.json().get("detail", "")
+                except Exception:
+                    detail = resp.text or ""
+                return self._handle_auth_failure(
+                    detail or "Session expired. Please log in again."
+                )
 
         except Exception as e:
             print(f"initialize_auth error: {e}")
-            self.is_authenticated = False
+            return self._handle_auth_failure("Authentication failed. Please log in again.")
 
         self.auth_checked = True
 
@@ -258,6 +300,8 @@ class AppState(rx.State):
         self.user_email = ""
         self.user_name = ""
         self.user_picture = ""
+        self.user_role = ""
+        self.auth_error = ""
 
         return rx.redirect(path="/")
 
@@ -271,6 +315,8 @@ class AppState(rx.State):
                     headers=self._auth_headers(),
                 )
                 if response.status_code != 200:
+                    if response.status_code in (401, 403):
+                        return self._handle_auth_failure("Please log in as an admin to access Manager.")
                     detail = response.json().get("detail", "Failed to load snapshot")
                     return rx.toast.error(detail)
 
@@ -343,6 +389,8 @@ class AppState(rx.State):
                     headers=self._auth_headers(),
                 )
                 if response.status_code >= 300:
+                    if response.status_code in (401, 403):
+                        return self._handle_auth_failure("Session expired. Please log in again.")
                     detail = response.json().get("detail", "Failed to update task")
                     return rx.toast.error(detail)
                 await self.refresh_manager_snapshot()
@@ -387,6 +435,8 @@ class AppState(rx.State):
                     headers=self._auth_headers(),
                 )
                 if response.status_code >= 300:
+                    if response.status_code in (401, 403):
+                        return self._handle_auth_failure("Session expired. Please log in again.")
                     detail = response.json().get("detail", "Failed to save entry")
                     return rx.toast.error(detail)
 
@@ -411,6 +461,8 @@ class AppState(rx.State):
                     headers=self._auth_headers(),
                 )
                 if response.status_code >= 300:
+                    if response.status_code in (401, 403):
+                        return self._handle_auth_failure("Session expired. Please log in again.")
                     detail = response.json().get("detail", "Failed to delete entry")
                     return rx.toast.error(detail)
                 await self.refresh_manager_snapshot()
@@ -566,24 +618,189 @@ class AppState(rx.State):
         if self.task_history:
             return await self.refresh_task_status(self.task_history[0].get("id"))
         return rx.toast.info("No tasks to refresh.")
-    
-    async def load_leaderboard_data(self):
-        """Load leaderboard data from backend."""
+
+    def _normalize_option_list(self, values: List[Any]) -> List[str]:
+        """Normalize category options into unique list with 'All'."""
+        options: List[str] = ["All"]
+        for value in values or []:
+            if value is None:
+                continue
+            cleaned = str(value).strip()
+            if cleaned and cleaned not in options:
+                options.append(cleaned)
+        return options
+
+    def _ensure_option(self, options: List[str], value: Optional[str]) -> List[str]:
+        """Ensure a suggested value exists in option list."""
+        if value and value not in options:
+            return options + [value]
+        return options
+
+    def _coerce_filter_value(self, value: str) -> Optional[str]:
+        """Convert 'All' to None for API calls."""
+        if not value or value == "All":
+            return None
+        return value
+
+    def _clamp_limit(self, value: int) -> int:
+        """Clamp leaderboard limit to API bounds."""
+        if value < 1:
+            return 1
+        if value > 1000:
+            return 1000
+        return value
+
+    async def load_leaderboard_categories(self):
+        """Load distinct category options for filters."""
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
                 response = await client.get(
+                    f"{self.api_base_url}/api/v1/leaderboard/categories",
+                    headers=self._auth_headers(),
+                )
+
+            if response.status_code == 200:
+                data = response.json()
+                self.leaderboard_language_options = self._normalize_option_list(
+                    data.get("languages", [])
+                )
+                self.leaderboard_subject_options = self._normalize_option_list(
+                    data.get("subject_types", [])
+                )
+                self.leaderboard_task_type_options = self._normalize_option_list(
+                    data.get("task_types", [])
+                )
+                return
+
+            detail = response.json().get("detail", "Failed to load categories")
+            return rx.toast.error(detail)
+        except Exception as e:
+            return rx.toast.error(f"Failed to load categories: {e}")
+
+    async def suggest_leaderboard_filters(self):
+        """Use planner agent to suggest filters from natural language query."""
+        if not self.leaderboard_query.strip():
+            return rx.toast.error("Please enter a query")
+
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                response = await client.post(
+                    f"{self.api_base_url}/api/v1/leaderboard/suggest",
+                    json={"query": self.leaderboard_query},
+                    headers=self._auth_headers(),
+                )
+
+            if response.status_code != 200:
+                try:
+                    detail = response.json().get("detail", "Failed to suggest filters")
+                except Exception:
+                    detail = response.text or "Failed to suggest filters"
+                self.leaderboard_suggest_error = detail
+                return rx.toast.error(detail)
+
+            data = response.json()
+            language = data.get("language") or "All"
+            subject_type = data.get("subject_type") or "All"
+            task_type = data.get("task_type") or "All"
+
+            subject_options = data.get("subject_type_options") or []
+            if subject_options:
+                self.leaderboard_subject_options = self._normalize_option_list(subject_options)
+
+            self.leaderboard_language_options = self._ensure_option(
+                self.leaderboard_language_options,
+                language if language != "All" else None,
+            )
+            self.leaderboard_subject_options = self._ensure_option(
+                self.leaderboard_subject_options,
+                subject_type if subject_type != "All" else None,
+            )
+            self.leaderboard_task_type_options = self._ensure_option(
+                self.leaderboard_task_type_options,
+                task_type if task_type != "All" else None,
+            )
+
+            self.language_filter = language
+            self.subject_filter = subject_type
+            self.task_type_filter = task_type
+
+            self.leaderboard_plan_summary = data.get("plan_summary") or ""
+            self.leaderboard_used_planner = bool(data.get("used_planner"))
+            self.leaderboard_confidence = float(data.get("confidence") or 0.0)
+            self.leaderboard_rationale = data.get("rationale") or ""
+            self.leaderboard_suggest_error = ""
+            self.leaderboard_last_suggested = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            return await self.load_leaderboard_data()
+        except Exception as e:
+            self.leaderboard_suggest_error = str(e)
+            return rx.toast.error(f"Planner request failed: {e}")
+    
+    async def load_leaderboard_data(self):
+        """Load leaderboard data from backend using current filters."""
+        self.leaderboard_loading = True
+        try:
+            if (
+                len(self.leaderboard_language_options) <= 1
+                or len(self.leaderboard_subject_options) <= 1
+                or len(self.leaderboard_task_type_options) <= 1
+            ):
+                await self.load_leaderboard_categories()
+
+            limit = self._clamp_limit(self.max_results)
+            params = {
+                "language": self._coerce_filter_value(self.language_filter),
+                "subject_type": self._coerce_filter_value(self.subject_filter),
+                "task_type": self._coerce_filter_value(self.task_type_filter),
+                "limit": limit,
+            }
+            params = {k: v for k, v in params.items() if v is not None}
+
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                response = await client.get(
                     f"{self.api_base_url}/api/v1/leaderboard/browse",
+                    params=params,
                     headers=self._auth_headers(),
                 )
                 
                 if response.status_code == 200:
                     data = response.json()
-                    # Process leaderboard data
-                    return data
+                    entries = data.get("entries", [])
+                    rows = []
+                    for idx, entry in enumerate(entries, start=1):
+                        score = entry.get("score")
+                        score_label = (
+                            f"{score:.2f}" if isinstance(score, (int, float)) else str(score or "-")
+                        )
+                        rows.append(
+                            {
+                                "rank": idx,
+                                "model": entry.get("model_name") or "-",
+                                "score": score,
+                                "score_label": score_label,
+                                "language": entry.get("language") or "-",
+                                "subject": entry.get("subject_type") or "-",
+                                "task_type": entry.get("task_type") or "-",
+                                "updated_at": entry.get("last_updated") or "-",
+                            }
+                        )
+
+                    self.leaderboard_entries = rows
+                    self.leaderboard_query_description = data.get("query") or ""
+                    if not rows:
+                        return rx.toast.info("No leaderboard entries for those filters")
+                    return rx.toast.success("Leaderboard updated")
+                try:
+                    detail = response.json().get("detail", "Failed to load leaderboard")
+                except Exception:
+                    detail = response.text or "Failed to load leaderboard"
+                return rx.toast.error(detail)
                     
         except Exception as e:
             print(f"Error loading leaderboard: {e}")
-            return None
+            return rx.toast.error(f"Error loading leaderboard: {e}")
+        finally:
+            self.leaderboard_loading = False
 
 
 def header() -> rx.Component:
@@ -687,6 +904,17 @@ def header() -> rx.Component:
             text_align="center",
             margin_bottom="2rem",
         ),
+        rx.cond(
+            AppState.auth_error != "",
+            rx.card(
+                rx.text(AppState.auth_error, color="red", size="2"),
+                background="rgba(254, 226, 226, 0.9)",
+                border="1px solid rgba(248, 113, 113, 0.6)",
+                padding="0.75rem",
+                width="100%",
+            ),
+            rx.fragment(),
+        ),
         rx.divider(),
         width="100%",
         margin_bottom="2rem",
@@ -715,10 +943,11 @@ def navigation() -> rx.Component:
             color_scheme="blue",
         ),
         rx.button(
-            "🛠 Manager",
+            "🛠 Manager (Admin)",
             on_click=lambda: AppState.set_page("manager"),
             variant=rx.cond(AppState.current_page == "manager", "solid", "outline"),
             color_scheme="blue",
+            disabled=rx.cond(AppState.is_admin_user, False, True),
         ),
         spacing="4",
         justify="center",
@@ -1077,65 +1306,80 @@ def status_page() -> rx.Component:
     )
 
 
+def leaderboard_table_row(entry: rx.Var[dict]) -> rx.Component:
+    """Leaderboard row for browse table."""
+    return rx.table.row(
+        rx.table.cell(entry["rank"]),
+        rx.table.cell(entry["model"]),
+        rx.table.cell(entry["language"]),
+        rx.table.cell(entry["subject"]),
+        rx.table.cell(entry["task_type"]),
+        rx.table.cell(
+            rx.badge(entry["score_label"], color_scheme="blue", variant="solid")
+        ),
+        rx.table.cell(entry["updated_at"]),
+    )
+
+
 def leaderboard_page() -> rx.Component:
     """Leaderboard browsing page."""
     return rx.vstack(
-        rx.heading("🏅 Browse Leaderboards", size="6", margin_bottom="1rem"),
+        rx.heading("?? Browse Leaderboards", size="6", margin_bottom="1rem"),
         
         # Leaderboard table
         rx.card(
             rx.vstack(
-                rx.heading("Model Performance Rankings", size="4", margin_bottom="1rem"),
-                
-                rx.table.root(
-                    rx.table.header(
-                        rx.table.row(
-                            rx.table.column_header_cell("Rank"),
-                            rx.table.column_header_cell("Model"),
-                            rx.table.column_header_cell("Score"),
-                            rx.table.column_header_cell("Task Type"),
-                            rx.table.column_header_cell("Date"),
-                        ),
-                    ),
-                    rx.table.body(
-                        rx.table.row(
-                            rx.table.row_header_cell("1"),
-                            rx.table.cell("GPT-4"),
-                            rx.table.cell(
-                                rx.badge("95.2", color_scheme="green", variant="solid")
-                            ),
-                            rx.table.cell("Korean Math"),
-                            rx.table.cell("2024-11-17"),
-                        ),
-                        rx.table.row(
-                            rx.table.row_header_cell("2"),
-                            rx.table.cell("Claude-3"),
-                            rx.table.cell(
-                                rx.badge("92.8", color_scheme="blue", variant="solid")
-                            ),
-                            rx.table.cell("Text Summary"),
-                            rx.table.cell("2024-11-17"),
-                        ),
-                        rx.table.row(
-                            rx.table.row_header_cell("3"),
-                            rx.table.cell("Llama-2"),
-                            rx.table.cell(
-                                rx.badge("88.5", color_scheme="orange", variant="solid")
-                            ),
-                            rx.table.cell("Code Generation"),
-                            rx.table.cell("2024-11-17"),
-                        ),
-                        rx.table.row(
-                            rx.table.row_header_cell("4"),
-                            rx.table.cell("Gemini Pro"),
-                            rx.table.cell(
-                                rx.badge("85.3", color_scheme="purple", variant="solid")
-                            ),
-                            rx.table.cell("Korean Math"),
-                            rx.table.cell("2024-11-16"),
-                        ),
+                rx.hstack(
+                    rx.heading("Model Performance Rankings", size="4"),
+                    rx.spacer(),
+                    rx.button(
+                        "Refresh",
+                        size="2",
+                        variant="outline",
+                        on_click=AppState.load_leaderboard_data,
+                        loading=AppState.leaderboard_loading,
                     ),
                     width="100%",
+                    align="center",
+                ),
+                rx.cond(
+                    AppState.leaderboard_query_description != "",
+                    rx.text(
+                        AppState.leaderboard_query_description,
+                        size="2",
+                        color="gray",
+                    ),
+                    rx.fragment(),
+                ),
+                rx.cond(
+                    AppState.leaderboard_entries.length() > 0,
+                    rx.table.root(
+                        rx.table.header(
+                            rx.table.row(
+                                rx.table.column_header_cell("Rank"),
+                                rx.table.column_header_cell("Model"),
+                                rx.table.column_header_cell("Language"),
+                                rx.table.column_header_cell("Subject"),
+                                rx.table.column_header_cell("Task Type"),
+                                rx.table.column_header_cell("Score"),
+                                rx.table.column_header_cell("Updated"),
+                            ),
+                        ),
+                        rx.table.body(
+                            rx.foreach(
+                                AppState.leaderboard_entries,
+                                leaderboard_table_row,
+                            )
+                        ),
+                        width="100%",
+                    ),
+                    rx.center(
+                        rx.text(
+                            "No leaderboard data yet. Apply filters to load results.",
+                            color="gray",
+                        ),
+                        padding="2rem",
+                    ),
                 ),
                 
                 align="start",
@@ -1149,12 +1393,77 @@ def leaderboard_page() -> rx.Component:
         rx.card(
             rx.vstack(
                 rx.heading("Filter Results", size="4", margin_bottom="1rem"),
+                rx.vstack(
+                    rx.text("Natural Language Filter", weight="bold", size="2"),
+                    rx.text_area(
+                        placeholder="Find models strong at Korean math reasoning",
+                        value=AppState.leaderboard_query,
+                        on_change=AppState.set_leaderboard_query,
+                        height="90px",
+                        width="100%",
+                    ),
+                    rx.text(
+                        "Use the planning agent to suggest filters from your query.",
+                        size="2",
+                        color="gray",
+                    ),
+                    width="100%",
+                    align="start",
+                ),
+                rx.hstack(
+                    rx.button(
+                        "Plan Filters",
+                        size="3",
+                        color_scheme="blue",
+                        on_click=AppState.suggest_leaderboard_filters,
+                        loading=AppState.leaderboard_loading,
+                    ),
+                    rx.button(
+                        "Apply Filters",
+                        size="3",
+                        variant="outline",
+                        on_click=AppState.load_leaderboard_data,
+                        loading=AppState.leaderboard_loading,
+                    ),
+                    spacing="3",
+                ),
+                rx.cond(
+                    AppState.leaderboard_plan_summary != "",
+                    rx.vstack(
+                        rx.text("Planned Filters", weight="bold", size="2"),
+                        rx.text(AppState.leaderboard_plan_summary, size="2", color="gray"),
+                        rx.text(
+                            rx.text(
+                                "Planner: ",
+                                rx.cond(AppState.leaderboard_used_planner, "used", "fallback"),
+                                " | Confidence: ",
+                                AppState.leaderboard_confidence,
+                            ),
+                            size="1",
+                            color="gray",
+                        ),
+                        rx.cond(
+                            AppState.leaderboard_rationale != "",
+                            rx.text(AppState.leaderboard_rationale, size="1", color="gray"),
+                            rx.fragment(),
+                        ),
+                        width="100%",
+                        align="start",
+                        spacing="1",
+                    ),
+                    rx.fragment(),
+                ),
+                rx.cond(
+                    AppState.leaderboard_suggest_error != "",
+                    rx.text(AppState.leaderboard_suggest_error, size="1", color="red"),
+                    rx.fragment(),
+                ),
                 
                 rx.grid(
                     rx.vstack(
                         rx.text("Language", weight="bold", size="2"),
                         rx.select(
-                            ["All", "Korean", "English", "Japanese", "Chinese"],
+                            AppState.leaderboard_language_options,
                             value=AppState.language_filter,
                             on_change=AppState.set_language_filter,
                             width="100%",
@@ -1166,7 +1475,7 @@ def leaderboard_page() -> rx.Component:
                     rx.vstack(
                         rx.text("Subject", weight="bold", size="2"),
                         rx.select(
-                            ["All", "Math", "Science", "Language", "History", "Programming"],
+                            AppState.leaderboard_subject_options,
                             value=AppState.subject_filter,
                             on_change=AppState.set_subject_filter,
                             width="100%",
@@ -1178,7 +1487,7 @@ def leaderboard_page() -> rx.Component:
                     rx.vstack(
                         rx.text("Task Type", weight="bold", size="2"),
                         rx.select(
-                            ["All", "Korean Math", "Text Summary", "Code Generation", "Translation", "QA"],
+                            AppState.leaderboard_task_type_options,
                             value=AppState.task_type_filter,
                             on_change=AppState.set_task_type_filter,
                             width="100%",
@@ -1205,17 +1514,6 @@ def leaderboard_page() -> rx.Component:
                     width="100%",
                 ),
                 
-                rx.center(
-                    rx.button(
-                        "Apply Filters",
-                        size="3",
-                        color_scheme="blue",
-                        width="200px",
-                    ),
-                    width="100%",
-                    margin_top="1rem",
-                ),
-                
                 align="start",
                 spacing="3",
                 width="100%",
@@ -1228,7 +1526,6 @@ def leaderboard_page() -> rx.Component:
         align="start",
         spacing="4",
     )
-
 
 
 def manager_status_card(title: str, value: rx.Var[str], description: str = "") -> rx.Component:
@@ -1542,13 +1839,29 @@ def manager_coverage_section() -> rx.Component:
 
 def manager_page() -> rx.Component:
     """Main manager dashboard layout."""
-    return rx.vstack(
-        rx.heading("🛠 Manager Console", size="6", margin_bottom="1rem"),
-        manager_health_section(),
-        manager_tasks_section(),
-        manager_coverage_section(),
-        spacing="4",
-        width="100%",
+    return rx.cond(
+        AppState.is_admin_user,
+        rx.vstack(
+            rx.heading("🛠 Manager Console", size="6", margin_bottom="1rem"),
+            manager_health_section(),
+            manager_tasks_section(),
+            manager_coverage_section(),
+            spacing="4",
+            width="100%",
+        ),
+        rx.card(
+            rx.vstack(
+                rx.heading("Admin access required", size="5"),
+                rx.text(
+                    "Log in with an admin account to access the Manager console.",
+                    color="gray",
+                ),
+                spacing="2",
+                align="start",
+                width="100%",
+            ),
+            width="100%",
+        ),
     )
 
 

@@ -95,7 +95,7 @@ def run_evaluation(self, task_id: str, plan_details: str) -> Dict[str, Any]:
             storage_stats = storage_manager.store_evaluation_results(
                 model_results=mapped_model_results,
                 sample_results=mapped_sample_results,
-                task_id=None,
+                task_id=task_id,
             )
 
         if mapped_model_results:
@@ -206,7 +206,7 @@ def run_hret_evaluation(
                 storage_stats = storage_manager.store_evaluation_results(
                     model_results=mapped_model_results,
                     sample_results=mapped_sample_results,
-                    task_id=None,
+                    task_id=task_id,
                 )
 
             if mapped_model_results:
@@ -217,7 +217,7 @@ def run_hret_evaluation(
         if task:
             task.status = "SUCCESS"
             task.result = json.dumps(results)
-            task.completed_at = db.func.now()
+            task.completed_at = datetime.utcnow()
             db.commit()
         
         logger.info(f"HRET evaluation task {task_id} completed successfully")
@@ -236,7 +236,7 @@ def run_hret_evaluation(
         if task:
             task.status = "FAILURE"
             task.error_message = str(e)
-            task.completed_at = db.func.now()
+            task.completed_at = datetime.utcnow()
             db.commit()
         
         # Re-raise exception for Celery

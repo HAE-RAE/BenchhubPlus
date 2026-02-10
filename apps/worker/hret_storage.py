@@ -1,10 +1,12 @@
 """Storage utilities for HRET evaluation results in BenchhubPlus database."""
 
 import logging
+import json
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy import tuple_
 
 # Import database models
 import sys
@@ -16,6 +18,8 @@ from worker.hret_mapper import BenchhubSample, BenchhubModelResult, HRETResultMa
 from core.categories import BENCHHUB_COARSE_CATEGORIES, BENCHHUB_FINE_CATEGORIES
 
 logger = logging.getLogger(__name__)
+SAMPLE_BULK_CHUNK = 500
+LEADERBOARD_KEY_CHUNK = 500
 
 
 class HRETStorageManager:
@@ -75,7 +79,8 @@ class HRETStorageManager:
         self,
         model_results: List[BenchhubModelResult],
         sample_results: List[BenchhubSample],
-        task_id: Optional[str] = None
+        task_id: Optional[str] = None,
+        update_task: bool = False,
     ) -> Dict[str, Any]:
         """
         Store HRET evaluation results in BenchhubPlus database.
@@ -93,6 +98,8 @@ class HRETStorageManager:
             "samples_stored": 0,
             "leaderboard_entries_updated": 0,
             "errors": [],
+            "sample_errors": [],
+            "leaderboard_errors": [],
             "task_id": task_id,
             "timestamp": datetime.utcnow().isoformat()
         }
@@ -100,15 +107,22 @@ class HRETStorageManager:
         db = SessionLocal()
         try:
             # Store sample results
-            samples_stored = self._store_sample_results(db, sample_results)
+            samples_stored, sample_errors = self._store_sample_results(db, sample_results)
             storage_stats["samples_stored"] = samples_stored
+            storage_stats["sample_errors"] = sample_errors
+            if sample_errors:
+                storage_stats["errors"].extend(sample_errors)
+            db.commit()
             
             # Update leaderboard cache
-            leaderboard_updates = self._update_leaderboard_cache(db, model_results)
+            leaderboard_updates, leaderboard_errors = self._update_leaderboard_cache(db, model_results)
             storage_stats["leaderboard_entries_updated"] = leaderboard_updates
+            storage_stats["leaderboard_errors"] = leaderboard_errors
+            if leaderboard_errors:
+                storage_stats["errors"].extend(leaderboard_errors)
             
             # Update evaluation task status if provided
-            if task_id:
+            if task_id and update_task:
                 self._update_evaluation_task(db, task_id, "SUCCESS", storage_stats)
             
             db.commit()
@@ -121,7 +135,7 @@ class HRETStorageManager:
             storage_stats["errors"].append(error_msg)
             
             # Update task status to failure if provided
-            if task_id:
+            if task_id and update_task:
                 try:
                     self._update_evaluation_task(db, task_id, "FAILURE", {"error": str(e)})
                     db.commit()
@@ -133,69 +147,166 @@ class HRETStorageManager:
         
         return storage_stats
     
-    def _store_sample_results(self, db: Session, sample_results: List[BenchhubSample]) -> int:
+    def _store_sample_results(
+        self,
+        db: Session,
+        sample_results: List[BenchhubSample]
+    ) -> tuple[int, List[str]]:
         """Store sample results in ExperimentSample table."""
         
         stored_count = 0
+        errors: List[str] = []
+
+        if not sample_results:
+            return stored_count, errors
+
+        objects: List[ExperimentSample] = []
         
         for sample in sample_results:
+            db_sample = ExperimentSample(
+                prompt=sample.prompt,
+                answer=sample.answer,
+                skill_label=sample.skill_label,
+                target_label=sample.target_label,
+                subject_label=sample.subject_label,
+                format_label=sample.format_label,
+                dataset_name=sample.dataset_name,
+                meta_data=sample.meta_data,
+                correctness=sample.correctness
+            )
+            objects.append(db_sample)
+
+        for i in range(0, len(objects), SAMPLE_BULK_CHUNK):
+            chunk = objects[i:i + SAMPLE_BULK_CHUNK]
             try:
-                db_sample = ExperimentSample(
-                    prompt=sample.prompt,
-                    answer=sample.answer,
-                    skill_label=sample.skill_label,
-                    target_label=sample.target_label,
-                    subject_label=sample.subject_label,
-                    format_label=sample.format_label,
-                    dataset_name=sample.dataset_name,
-                    meta_data=sample.meta_data,
-                    correctness=sample.correctness
-                )
-                
-                db.add(db_sample)
-                stored_count += 1
-                
-            except Exception as e:
-                logger.error(f"Failed to store sample result: {e}")
-                continue
+                with db.begin_nested():
+                    db.bulk_save_objects(chunk)
+                stored_count += len(chunk)
+            except SQLAlchemyError as e:
+                error_msg = f"Sample bulk insert failed (chunk {i // SAMPLE_BULK_CHUNK + 1}): {e}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+                # Fallback to per-row insert with savepoints
+                for obj in chunk:
+                    try:
+                        with db.begin_nested():
+                            db.add(obj)
+                            db.flush()
+                        stored_count += 1
+                    except SQLAlchemyError as row_error:
+                        row_msg = f"Sample insert failed: {row_error}"
+                        logger.error(row_msg)
+                        errors.append(row_msg)
         
-        return stored_count
+        return stored_count, errors
     
-    def _update_leaderboard_cache(self, db: Session, model_results: List[BenchhubModelResult]) -> int:
+    def _update_leaderboard_cache(
+        self,
+        db: Session,
+        model_results: List[BenchhubModelResult]
+    ) -> tuple[int, List[str]]:
         """Update leaderboard cache with model results."""
         
         updated_count = 0
+        errors: List[str] = []
+
+        if not model_results:
+            return updated_count, errors
+
+        entries_map: Dict[tuple, Dict[str, Any]] = {}
         
         for model_result in model_results:
             try:
                 # Create leaderboard entries for different categories
                 entries_to_update = self._generate_leaderboard_entries(model_result)
-                
                 for entry in entries_to_update:
-                    # Check if entry exists
-                    existing_entry = db.query(LeaderboardCache).filter(
-                        LeaderboardCache.model_name == entry["model_name"],
-                        LeaderboardCache.language == entry["language"],
-                        LeaderboardCache.subject_type == entry["subject_type"],
-                        LeaderboardCache.task_type == entry["task_type"]
-                    ).first()
-                    
-                    if existing_entry:
-                        # Update existing entry
-                        existing_entry.score = entry["score"]
-                        existing_entry.last_updated = entry["last_updated"]
-                    else:
-                        # Create new entry
-                        new_entry = LeaderboardCache(**entry)
-                        db.add(new_entry)
-                    
-                    updated_count += 1
-                    
+                    key = (
+                        entry["model_name"],
+                        entry["language"],
+                        entry["subject_type"],
+                        entry["task_type"],
+                    )
+                    entries_map[key] = entry
+
             except Exception as e:
                 logger.error(f"Failed to update leaderboard for model {model_result.model_name}: {e}")
-                continue
-        
-        return updated_count
+                errors.append(str(e))
+
+        if not entries_map:
+            return updated_count, errors
+
+        keys = list(entries_map.keys())
+        existing_entries: Dict[tuple, LeaderboardCache] = {}
+        for i in range(0, len(keys), LEADERBOARD_KEY_CHUNK):
+            chunk = keys[i:i + LEADERBOARD_KEY_CHUNK]
+            rows = (
+                db.query(LeaderboardCache)
+                .filter(
+                    tuple_(
+                        LeaderboardCache.model_name,
+                        LeaderboardCache.language,
+                        LeaderboardCache.subject_type,
+                        LeaderboardCache.task_type,
+                    ).in_(chunk)
+                )
+                .all()
+            )
+            for row in rows:
+                existing_entries[(row.model_name, row.language, row.subject_type, row.task_type)] = row
+
+        try:
+            new_entries: List[LeaderboardCache] = []
+            with db.begin_nested():
+                for key, entry in entries_map.items():
+                    existing = existing_entries.get(key)
+                    if existing:
+                        existing.score = entry["score"]
+                        existing.last_updated = entry["last_updated"]
+                        existing.quarantined = False
+                        existing.deleted_at = None
+                    else:
+                        new_entries.append(LeaderboardCache(**entry))
+                if new_entries:
+                    db.add_all(new_entries)
+                db.flush()
+            updated_count = len(entries_map)
+            return updated_count, errors
+        except SQLAlchemyError as e:
+            error_msg = f"Leaderboard bulk update failed: {e}"
+            logger.error(error_msg)
+            errors.append(error_msg)
+            db.rollback()
+
+        # Fallback to per-entry updates with savepoints
+        updated_count = 0
+        for key, entry in entries_map.items():
+            try:
+                with db.begin_nested():
+                    existing = (
+                        db.query(LeaderboardCache)
+                        .filter(
+                            LeaderboardCache.model_name == entry["model_name"],
+                            LeaderboardCache.language == entry["language"],
+                            LeaderboardCache.subject_type == entry["subject_type"],
+                            LeaderboardCache.task_type == entry["task_type"],
+                        )
+                        .first()
+                    )
+                    if existing:
+                        existing.score = entry["score"]
+                        existing.last_updated = entry["last_updated"]
+                        existing.quarantined = False
+                        existing.deleted_at = None
+                    else:
+                        db.add(LeaderboardCache(**entry))
+                    db.flush()
+                updated_count += 1
+            except SQLAlchemyError as row_error:
+                row_msg = f"Leaderboard entry update failed for {entry.get('model_name')}: {row_error}"
+                logger.error(row_msg)
+                errors.append(row_msg)
+
+        return updated_count, errors
     
     def _generate_leaderboard_entries(self, model_result: BenchhubModelResult) -> List[Dict[str, Any]]:
         """Generate leaderboard entries for a model result."""
@@ -366,7 +477,12 @@ class HRETStorageManager:
             
             if task:
                 task.status = status
-                task.result = str(result) if result else None
+                if result is None:
+                    task.result = None
+                elif isinstance(result, str):
+                    task.result = result
+                else:
+                    task.result = json.dumps(result, default=str)
                 
                 if status in ["SUCCESS", "FAILURE"]:
                     task.completed_at = datetime.utcnow()

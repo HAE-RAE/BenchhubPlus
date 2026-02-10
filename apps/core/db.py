@@ -59,6 +59,8 @@ class User(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     role = Column(String(50), default="user", nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
+    default_org_id = Column(Integer, ForeignKey("organizations.id"), nullable=True, index=True)
+    default_workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=True, index=True)
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -70,12 +72,70 @@ class User(Base):
         Index('idx_users_google_id', 'google_id'),
         Index('idx_users_email', 'email'),
         Index('idx_users_role', 'role'),
+        Index('idx_users_default_org', 'default_org_id'),
+        Index('idx_users_default_workspace', 'default_workspace_id'),
     )
     
     def __repr__(self) -> str:
         return (
             f"<User(id={self.id}, full_name='{self.full_name}', email='{self.email}', google_id='{self.google_id}')>"
         )
+
+
+class Organization(Base):
+    """Tenant organization for multi-tenant support."""
+
+    __tablename__ = "organizations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), unique=True, nullable=False, index=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+
+class Workspace(Base):
+    """Workspace within an organization."""
+
+    __tablename__ = "workspaces"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    slug = Column(String(255), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "slug", name="uq_workspace_slug"),
+    )
+
+
+class WorkspaceMembership(Base):
+    """Membership mapping between users and workspaces."""
+
+    __tablename__ = "workspace_memberships"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    workspace_id = Column(Integer, ForeignKey("workspaces.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    role = Column(String(50), default="member", nullable=False)
+    is_owner = Column(Boolean, default=False, nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "user_id", name="uq_workspace_member"),
+    )
 
 
 class LeaderboardCache(Base):

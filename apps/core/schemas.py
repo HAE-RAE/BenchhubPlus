@@ -325,6 +325,9 @@ class UserResponse(BaseModel):
     name: Optional[str] = Field(None, description="User full name")
     picture: Optional[str] = Field(None, description="User profile picture URL")
     email_verified: bool = Field(..., description="Whether email is verified")
+    role: Optional[str] = Field(None, description="User role")
+    organization_id: Optional[int] = Field(None, description="Default organization ID")
+    workspace_id: Optional[int] = Field(None, description="Default workspace ID")
     created_at: Optional[datetime] = Field(None, description="Account creation timestamp")
     last_login_at: Optional[datetime] = Field(None, description="Last login timestamp")
 

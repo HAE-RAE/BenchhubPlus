@@ -12,7 +12,7 @@ from sqlalchemy import text
 from pydantic import BaseModel, Field, validator
 from celery import states
 
-from ...core.db import get_db
+from ...core.db import User, get_db
 from ...core.schemas import (
     TaskStatus,
     HealthResponse,
@@ -80,6 +80,21 @@ def _parse_policy_tags(raw: Optional[str]) -> List[str]:
     return [tag.strip() for tag in raw.split(",") if tag.strip()]
 
 
+def _is_admin(user: Optional[User]) -> bool:
+    return bool(user and (user.is_admin or user.role == "admin"))
+
+
+def _authorize_task_access(task, user: Optional[User]) -> None:
+    """Ensure current user can access the task."""
+    if task.user_id is None:
+        return
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    if _is_admin(user) or task.user_id == user.id:
+        return
+    raise HTTPException(status_code=403, detail="Not authorized to access this task")
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request, response: Response, db: Session = Depends(get_db)):
     """Health check endpoint."""
@@ -136,18 +151,37 @@ async def health_check(request: Request, response: Response, db: Session = Depen
 @router.get("/tasks/{task_id}", response_model=Dict[str, Any])
 async def get_task_status(
     task_id: str = Path(..., description="Task ID"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """Get status of evaluation task."""
     
     try:
-        orchestrator = EvaluationOrchestrator(db)
-        task_info = orchestrator.get_task_status(task_id)
-        
-        if not task_info:
+        repo = TasksRepository(db)
+        task = repo.get_task(task_id)
+
+        if not task:
             raise HTTPException(status_code=404, detail="Task not found")
+
+        _authorize_task_access(task, current_user)
+
+        result: Dict[str, Any] = {
+            "task_id": task.task_id,
+            "status": task.status,
+            "created_at": task.created_at,
+            "completed_at": task.completed_at,
+        }
+
+        if task.result:
+            try:
+                result["result"] = json.loads(task.result)
+            except json.JSONDecodeError:
+                result["result"] = task.result
+
+        if task.error_message:
+            result["error_message"] = task.error_message
         
-        return task_info
+        return result
         
     except HTTPException:
         raise
@@ -224,13 +258,14 @@ async def control_task(
 async def get_task_details(
     task_id: str,
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ):
     """Return full task payload and logs."""
     repo = TasksRepository(db)
     task = repo.get_task_details(task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    _authorize_task_access(task, current_user)
 
     def _safe_json(payload: Optional[str]) -> Optional[Dict[str, Any]]:
         if payload is None:
@@ -267,9 +302,9 @@ async def list_tasks(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ):
-    """List evaluation tasks with filters and pagination (admin)."""
+    """List evaluation tasks with filters and pagination (admin or own tasks)."""
     
     try:
         allowed_statuses = {"PENDING", "STARTED", "SUCCESS", "FAILURE", "CANCELLED", "HOLD"}
@@ -280,6 +315,9 @@ async def list_tasks(
                     raise HTTPException(status_code=400, detail=f"Unsupported status {status_value}")
             statuses = normalized
         
+        if not _is_admin(current_user):
+            user_id = current_user.id
+
         repo = TasksRepository(db)
         tasks, total = repo.filter_tasks(
             statuses=statuses,
@@ -322,12 +360,20 @@ async def list_tasks(
 async def cancel_task(
     task_id: str = Path(..., description="Task ID"),
     db: Session = Depends(get_db),
-    current_user=Depends(require_admin),
+    current_user: User = Depends(get_current_user),
 ):
     """Cancel a pending evaluation task."""
     
     try:
         repo = TasksRepository(db)
+        task = repo.get_task(task_id)
+        if not task:
+            raise HTTPException(
+                status_code=404,
+                detail="Task not found",
+            )
+
+        _authorize_task_access(task, current_user)
         success = repo.cancel_task(task_id)
         
         if not success:
