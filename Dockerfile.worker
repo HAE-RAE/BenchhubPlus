@@ -33,7 +33,8 @@ ENV HF_HOME=/app/.cache/huggingface \
     HF_HUB_DISABLE_TELEMETRY=1 \
     TOKENIZERS_PARALLELISM=false
 
-RUN if [ -n "$HRET_PREFETCH_MODEL" ]; then \
+RUN <<EOF
+if [ -n "$HRET_PREFETCH_MODEL" ]; then
     HRET_PREFETCH_MODEL="$HRET_PREFETCH_MODEL" HRET_PREFETCH_REVISION="$HRET_PREFETCH_REVISION" \
     python - <<'PY'
 import os
@@ -44,7 +45,8 @@ if model:
     AutoTokenizer.from_pretrained(model, revision=revision)
     AutoModel.from_pretrained(model, revision=revision)
 PY
-    ; fi
+fi
+EOF
 
 # Copy application code
 COPY apps/ ./apps/
