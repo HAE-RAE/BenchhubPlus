@@ -14,7 +14,7 @@ Welcome to BenchHub Plus - an interactive leaderboard system for dynamic LLM eva
 - [User Manual](user-manual.md) - Complete user guide
 - [API Reference](api-reference.md) - REST API documentation
 - [Reflex Migration Guide](reflex-migration.md) - **New Reflex frontend usage guide**
-- [Frontend Guide](frontend-guide.md) - Using the Streamlit interface (legacy)
+- [Reflex Migration Guide](reflex-migration.md) - Using the Reflex frontend
 
 ### Development
 - [Development Guide](development.md) - Development setup and guidelines
@@ -60,7 +60,7 @@ BenchHub Plus is a comprehensive evaluation platform that:
 ## 🛠️ Technology Stack
 
 - **Backend**: FastAPI, SQLAlchemy, PostgreSQL
-- **Frontend**: Streamlit, Plotly
+- **Frontend**: Reflex (modular: state.py, components/, pages/)
 - **Task Queue**: Celery, Redis
 - **Evaluation**: HRET Toolkit
 - **Deployment**: Docker, Docker Compose

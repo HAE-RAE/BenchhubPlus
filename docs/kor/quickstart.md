@@ -113,30 +113,49 @@ Docker는 PostgreSQL/Redis 볼륨을 유지하므로 이전 결과가 삭제되�
 
 ---
 
-## 🧑‍💻 대안: 로컬 Python 환경
+## 🧑‍💻 대안: 하이브리드 로컬 환경
 
-Docker 대신 직접 실행하고 싶다면 다음 절차를 따르세요(Python 3.11+ 필요).
+빠른 반복 개발을 위해 PostgreSQL/Redis만 Docker로, Python 서비스는 네이티브로 실행합니다.
 
 ```bash
-./scripts/setup.sh      # 가상환경 생성 및 의존성 설치
+# 1. 인프라 시작
+docker compose -f docker-compose.dev.yml up -d postgres redis
+
+# 2. Python 환경 설정
+python3.11 -m venv venv
 source venv/bin/activate
+pip install -e .
+
+# 3. HRET 설치 (평가 실행에 필요)
+git clone https://github.com/HAE-RAE/haerae-evaluation-toolkit.git
+pip install -e ./haerae-evaluation-toolkit
+
+# 4. 환경 변수 설정
+cp .env.example .env
+# .env 편집: OPENAI_API_KEY, DEV_AUTH_BYPASS=true 설정
+# DATABASE_URL=postgresql://benchhub:dev_password@localhost:5433/benchhub_plus_dev
+# REDIS_URL=redis://localhost:6380/0
+
+# 5. 시드 데이터 복사 (있는 경우)
+cp seeds/seed_data.parquet data/seed_data.parquet
 ```
 
 이후 각 컴포넌트를 별도 터미널에서 실행합니다.
 
 ```bash
 # 터미널 1 – FastAPI 백엔드
-python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
+PYTHONPATH="." python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 # 터미널 2 – Celery 워커
 celery -A apps.worker.celery_app worker --loglevel=info
 
 # 터미널 3 – Reflex 프런트엔드
 cd apps/reflex_frontend
-API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
+DEV_AUTH_BYPASS=true API_BASE_URL=http://localhost:8000 PUBLIC_API_BASE_URL=http://localhost:8000 \
+  reflex run --env dev --backend-port 8002 --frontend-port 3000
 ```
 
-이 방식에서는 `.env`에 정의된 연결 정보에 맞는 PostgreSQL과 Redis 인스턴스를 직접 마련해야 합니다.
+> **팁:** `DEV_AUTH_BYPASS=true`로 설정하면 Google OAuth 없이 프런트엔드의 "Dev Login" 버튼으로 로그인할 수 있습니다.
 
 ---
 

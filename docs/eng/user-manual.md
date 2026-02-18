@@ -113,10 +113,19 @@ Expand the **Detailed Results** section to inspect the full JSON response. This 
 
 The Leaderboard tab queries the backend’s historical leaderboard API (`/api/v1/leaderboard/browse`).
 
+### AI-Powered Search
+
+Type a natural language query in the search box (e.g., “Best model for Korean math reasoning”) and click **Ask AI**. The Planner Agent will:
+- Automatically set the Language, Subject, and Task Type filters
+- Show a green summary card with the interpreted filters and confidence score
+
+If you type something unrelated to evaluation (e.g., “Hello!”), the system shows a blue usage guide card with example queries instead.
+
+### Manual Filtering
+
 1. Pick filters for **Language**, **Subject**, **Task Type**, and **Max Results**.
-2. Click **🔍 Apply Filters** to execute the query.
+2. Click **Load Leaderboard** to execute the query.
 3. Review the results table (rank, model name, score, metadata, and last updated date).
-4. A horizontal bar chart highlights the top 10 models for quick comparison.
 
 If no entries match the filters, the app shows a friendly message instead of an empty table.
 
@@ -145,7 +154,7 @@ If any component shows as disconnected, inspect container logs (`docker-compose 
 | **API error shown in Evaluate tab** | Confirm your API key is valid and has sufficient quota. Check backend logs for provider-specific errors. |
 | **Task stuck in PENDING** | Ensure the worker container is running (`docker ps` should show `benchhub_worker_dev`). Restart with `docker-compose -f docker-compose.dev.yml restart worker`. |
 | **Task fails immediately** | Expand the Task Details to read the error message. Common causes: typo in API base URL, unsupported model type, or provider outage. |
-| **Frontend cannot reach backend** | Verify `API_BASE_URL` (default `http://localhost:8001`) matches the backend port you exposed. |
+| **Frontend cannot reach backend** | Verify `API_BASE_URL` matches the backend port: `http://localhost:8000` for native Python, `http://localhost:8001` for Docker. |
 | **Metrics look empty** | Smaller sample sizes may yield sparse metrics; consider increasing the sample size or verifying that the evaluation plan generated questions successfully. |
 
 ---

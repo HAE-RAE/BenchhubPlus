@@ -49,9 +49,23 @@ BenchHub Plus 사용 중 자주 발생하는 문제와 해결 방법을 정리�
 - **워커 재시작**: `docker compose restart worker`
 
 ### 프런트엔드 화면이 표시되지 않음
-- **프런트엔드 로그**: `docker compose logs reflex`
-- **포트 확인**: `docker compose ps`, `netstat -tlnp | grep 3000`
-- **브라우저 개발자 도구에서 네트워크/콘솔 오류 확인**
+- **프런트엔드 로그**: `docker compose logs reflex` 또는 `reflex run` 실행 중인 터미널 확인
+- **포트 확인**: `lsof -i :3000`, `lsof -i :8002`
+- **포트 충돌 해결**: `lsof -ti:3000 | xargs kill -9` 후 재시작
+- **브라우저 개발자 도구에서 WebSocket 연결 및 네트워크/콘솔 오류 확인**
+
+### 인증/로그인 실패
+- **개발 모드에서 Google 로그인 실패 시**: `.env`에 `DEV_AUTH_BYPASS=true` 설정
+- **Reflex 프런트엔드에 환경 변수 전달**: `DEV_AUTH_BYPASS=true API_BASE_URL=http://localhost:8000 reflex run --env dev`
+- **백엔드 포트 확인**: 네이티브 실행 시 `8000`, Docker 실행 시 `8001`
+
+### HRET 모듈을 찾을 수 없음
+- **증상**: `WARNING: HRET not available: No module named 'llm_eval'`
+- **해결**: HRET를 로컬에 클론 후 설치
+  ```bash
+  git clone https://github.com/HAE-RAE/haerae-evaluation-toolkit.git
+  pip install -e ./haerae-evaluation-toolkit
+  ```
 
 ## 🐢 성능 저하
 - 샘플 수를 10~50으로 줄여 테스트 후 점진적으로 늘립니다.

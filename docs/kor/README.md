@@ -14,7 +14,7 @@ BenchHub Plus는 자연어 질의를 맞춤형 모델 랭킹으로 변환하는 
 - [사용자 매뉴얼](user-manual.md) - 전체 기능 설명
 - [API 레퍼런스](api-reference.md) - REST API 문서
 - [Reflex 마이그레이션 가이드](reflex-migration.md) - **새로운 Reflex 프런트엔드 사용법**
-- [프런트엔드 가이드](frontend-guide.md) - Streamlit 인터페이스 사용법 (TODO: 추가 예정)
+- [Reflex 마이그레이션 가이드](reflex-migration.md) - Reflex 프런트엔드 사용법
 
 ### 개발
 - [개발 가이드](development.md) - 개발 환경 구축과 규칙
@@ -60,7 +60,7 @@ BenchHub Plus는 다음과 같은 흐름으로 동작합니다.
 ## 🛠️ 기술 스택
 
 - **백엔드**: FastAPI, SQLAlchemy, PostgreSQL
-- **프런트엔드**: Reflex (권장), Streamlit (레거시 지원), Plotly
+- **프런트엔드**: Reflex (모듈화: state.py, components/, pages/)
 - **작업 큐**: Celery, Redis
 - **평가**: HRET Toolkit
 - **배포**: Docker, Docker Compose

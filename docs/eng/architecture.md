@@ -10,7 +10,7 @@ This document provides a comprehensive overview of BenchHub Plus architecture, d
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
-│  │  Streamlit  │    │   FastAPI   │    │   Celery    │         │
+│  │   Reflex    │    │   FastAPI   │    │   Celery    │         │
 │  │  Frontend   │◄──►│   Backend   │◄──►│   Workers   │         │
 │  └─────────────┘    └─────────────┘    └─────────────┘         │
 │         │                   │                   │               │
@@ -35,9 +35,11 @@ This document provides a comprehensive overview of BenchHub Plus architecture, d
 **Purpose**: User interface and interaction layer
 
 **Components**:
-- `rxconfig.py`: Frontend/backed port configuration and plugins
-- `reflex_frontend/reflex_frontend.py`: Application entry point and state
-- `reflex_frontend/`: UI components and layout helpers
+- `rxconfig.py`: Frontend/backend port configuration and plugins
+- `reflex_frontend/reflex_frontend.py`: Application entry point and router
+- `reflex_frontend/state.py`: Centralized application state (`AppState`)
+- `reflex_frontend/components/`: Reusable UI components (header, navigation, footer)
+- `reflex_frontend/pages/`: Page components (evaluation, status, leaderboard, manager)
 - `assets/`: Static assets and stylesheets
 
 **Responsibilities**:
@@ -206,9 +208,10 @@ Natural Language Query
 ```
 
 **Components**:
-- Query analysis
+- Query analysis and off-topic detection (non-evaluation queries return a usage guide instead of a plan)
 - Context extraction
-- Plan generation
+- Plan generation with strict BenchHub category validation
+- Language normalization ("Korean"/"English") and task type normalization ("Value/alignment")
 - Validation and refinement
 
 ### Evaluation Engine
@@ -259,7 +262,7 @@ Evaluation Plan
 ### Input Validation
 
 **Layers**:
-1. Frontend validation (Streamlit)
+1. Frontend validation (Reflex)
 2. API validation (Pydantic)
 3. Database constraints (SQLAlchemy)
 
@@ -308,14 +311,29 @@ Evaluation Plan
 
 ### Development Environment
 
+**Full Docker** (via `docker-compose.dev.yml`):
 ```
 Docker Compose (Local)
-├── Frontend Container (Streamlit)
+├── Frontend Container (Reflex)
 ├── Backend Container (FastAPI)
 ├── Worker Container (Celery)
 ├── Database Container (PostgreSQL)
 └── Cache Container (Redis)
 ```
+
+**Hybrid Local** (recommended for rapid iteration):
+```
+Docker Compose (Infrastructure only)
+├── PostgreSQL (port 5433)
+└── Redis (port 6380)
+
+Native Python processes
+├── FastAPI Backend  (port 8000, uvicorn --reload)
+├── Celery Worker    (loglevel=info)
+└── Reflex Frontend  (port 3000 / backend 8002)
+```
+
+> Set `DEV_AUTH_BYPASS=true` in `.env` to enable a simple dev login without Google OAuth.
 
 ### Production Environment
 
@@ -434,11 +452,19 @@ Code Push → GitHub Actions → Tests → Build → Deploy
 **Modular Design**:
 ```
 apps/
-├── core/          # Shared components
-├── backend/       # API layer
-├── frontend/      # UI layer
-├── worker/        # Task processing
-└── planner/       # AI planning
+├── core/                  # Shared components (config, DB, schemas, planner)
+│   └── plan/              # AI planning agent
+├── backend/               # FastAPI API layer
+│   ├── routes/            # API endpoint definitions
+│   ├── services/          # Business logic (orchestrator, audit)
+│   └── repositories/      # Data access layer
+├── reflex_frontend/       # Reflex UI layer
+│   └── reflex_frontend/
+│       ├── state.py       # Centralized AppState
+│       ├── components/    # Reusable UI components
+│       └── pages/         # Page components
+├── worker/                # Celery task processing
+└── evaluation/            # Evaluation engine
 ```
 
 **Dependency Management**:
@@ -469,7 +495,7 @@ apps/
 1. **Microservices vs Monolith**: Started with modular monolith for simplicity
 2. **Database Choice**: PostgreSQL for ACID compliance and JSON support
 3. **Task Queue**: Celery for mature ecosystem and reliability
-4. **Frontend Framework**: Streamlit for rapid development
+4. **Frontend Framework**: Reflex for component-based reactive UI with Python-only development
 5. **API Framework**: FastAPI for performance and automatic documentation
 
 ### Trade-offs Made

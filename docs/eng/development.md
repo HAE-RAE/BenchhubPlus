@@ -8,7 +8,7 @@ BenchHub Plus follows a microservices architecture with the following components
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Streamlit     │    │   FastAPI       │    │   Celery        │
+│   Reflex        │    │   FastAPI       │    │   Celery        │
 │   Frontend      │◄──►│   Backend       │◄──►│   Workers       │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
@@ -27,7 +27,7 @@ BenchHub Plus follows a microservices architecture with the following components
 
 ### Component Responsibilities
 
-- **Frontend (Streamlit)**: User interface, form handling, visualization
+- **Frontend (Reflex)**: User interface, form handling, reactive state management
 - **Backend (FastAPI)**: REST API, business logic, request orchestration
 - **Workers (Celery)**: Async task processing, HRET integration, model evaluation
 - **Database (PostgreSQL)**: Data persistence, caching, task tracking
@@ -61,25 +61,44 @@ cp .env.example .env
 ./scripts/deploy.sh development
 ```
 
-### Manual Setup
+### Manual Setup (Hybrid Local — Recommended)
+
+Use Docker for infrastructure (PostgreSQL, Redis) and run Python services natively:
 
 ```bash
-# Create virtual environment
+# 1. Start infrastructure with Docker
+docker compose -f docker-compose.dev.yml up -d postgres redis
+
+# 2. Create virtual environment
 python3.11 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
+# 3. Install dependencies
 pip install -e .
 
-# Setup database
-createdb benchhub_plus_dev
-python -c "from apps.core.db import init_db; init_db()"
+# 4. Clone and install HRET (required for evaluation tasks)
+git clone https://github.com/HAE-RAE/haerae-evaluation-toolkit.git
+pip install -e ./haerae-evaluation-toolkit
 
-# Start services individually
-./scripts/dev-backend.sh    # Terminal 1
-./scripts/dev-worker.sh     # Terminal 2  
-./scripts/dev-frontend.sh   # Terminal 3
+# 5. Configure environment
+cp .env.example .env
+# Edit .env: set OPENAI_API_KEY, DEV_AUTH_BYPASS=true
+# Ensure DATABASE_URL uses localhost:5433, REDIS_URL uses localhost:6380
+
+# 6. Start services individually
+# Terminal 1 — FastAPI backend
+PYTHONPATH="." python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
+
+# Terminal 2 — Celery worker
+celery -A apps.worker.celery_app worker --loglevel=info
+
+# Terminal 3 — Reflex frontend
+cd apps/reflex_frontend
+DEV_AUTH_BYPASS=true API_BASE_URL=http://localhost:8000 PUBLIC_API_BASE_URL=http://localhost:8000 \
+  reflex run --env dev --backend-port 8002 --frontend-port 3000
 ```
+
+> **Seed Data:** Place `seed_data.parquet` in the `data/` directory. The backend seeds the database automatically on startup if it is empty.
 
 ## 📁 Project Structure
 
@@ -92,7 +111,11 @@ BenchhubPlus/
 │   │   ├── services/             # Business logic layer
 │   │   └── repositories/         # Data access layer
 │   ├── reflex_frontend/          # Reflex frontend
-│   │   ├── reflex_frontend/      # UI components and pages
+│   │   ├── reflex_frontend/
+│   │   │   ├── reflex_frontend.py  # App entry point and router
+│   │   │   ├── state.py           # Centralized AppState
+│   │   │   ├── components/        # Reusable UI (header, nav, footer)
+│   │   │   └── pages/             # Page components (evaluation, status, leaderboard, manager)
 │   │   ├── assets/               # Static assets
 │   │   └── rxconfig.py           # Reflex configuration
 │   ├── worker/                   # Celery workers
@@ -105,9 +128,7 @@ BenchhubPlus/
 │   │   ├── models.py             # SQLAlchemy models
 │   │   ├── schemas.py            # Pydantic schemas
 │   │   └── security.py           # Security utilities
-│   └── planner/                  # AI planning agent
-│       ├── agent.py              # LLM-based planner
-│       └── templates/            # Plan templates
+│   └── evaluation/               # Evaluation engine
 ├── docs/                         # Documentation
 ├── scripts/                      # Deployment scripts
 ├── tests/                        # Test suites
@@ -463,12 +484,21 @@ import pdb; pdb.set_trace()
 ### Frontend Debugging
 
 ```python
-# Streamlit debugging
-st.write("Debug info:", variable)
-st.json(data_structure)
+# Reflex debugging — add print/log statements inside rx.State methods
+# They appear in the Reflex backend console (terminal running reflex run)
+import logging
+logger = logging.getLogger(__name__)
 
-# Session state debugging
-st.write("Session state:", st.session_state)
+class AppState(rx.State):
+    async def some_handler(self):
+        logger.debug(f"Current state: {self.language_filter}")
+        # Use rx.toast for quick UI feedback
+        return rx.toast.info("Debug: handler triggered")
+```
+
+Run with verbose logging:
+```bash
+reflex run --env dev --loglevel debug
 ```
 
 ### Worker Debugging

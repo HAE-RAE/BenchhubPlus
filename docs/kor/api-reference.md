@@ -9,10 +9,16 @@ BenchHub Plus REST API의 핵심 엔드포인트와 요청/응답 형식을 정�
 모든 엔드포인트는 `/api/v1` 경로를 접두사로 사용합니다.
 
 ## 🔐 인증
-외부 모델 서비스 호출 시 Bearer 토큰 방식의 API 키 인증을 사용합니다.
+JWT 기반 인증을 사용합니다. 아래 인증 엔드포인트로 토큰을 발급받으세요.
+
 ```http
-Authorization: Bearer your-api-key
+Authorization: Bearer <jwt_token>
 ```
+
+### 인증 엔드포인트
+
+- **POST `/api/v1/auth/dev-login`**: 개발 전용 로그인 (`DEV_AUTH_BYPASS=true` 필요). 이메일과 이름을 입력하면 JWT 토큰을 반환합니다.
+- **GET `/api/v1/auth/google/login`**: Google OAuth 로그인 리다이렉트. 개발 모드에서는 프런트엔드로 바로 리다이렉트됩니다.
 
 ## 📋 주요 엔드포인트
 
@@ -42,14 +48,15 @@ Authorization: Bearer your-api-key
   - 진행률, 결과, 모델별 지표, 실행 시간 확인
 - **DELETE `/api/v1/tasks/{task_id}`** : 완료된 작업 삭제
 
-### 평가 계획 및 샘플
-- **POST `/api/v1/planner/plan`** : 자연어 질의를 BenchHub 계획으로 변환
-- **POST `/api/v1/planner/preview`** : 계획 미리보기 및 샘플 추출
-- **GET `/api/v1/samples/{task_id}`** : 평가 샘플 데이터를 조회
+### AI 검색 (리더보드 필터 추천)
+- **POST `/api/v1/leaderboard/suggest`** : 자연어 질의를 기반으로 리더보드 필터를 추천합니다.
+  - 평가 관련 질의: 언어, 주제, 태스크 타입 필터를 자동 설정 (confidence 0.7)
+  - 평가와 무관한 질의 (인사, 잡담 등): 사용 안내 메시지를 반환 (`metadata.reason: "off_topic"`, confidence 0.0)
+  - Planner Agent가 "Korean"/"English"로 언어를 정규화하고, "Value/alignment"로 태스크 타입을 정규화합니다.
+- **GET `/api/v1/leaderboard/categories`** : 시드 데이터에서 사용 가능한 카테고리 목록 반환 (languages, subjects, task_types)
 
 ### 벤치마크 메타데이터
-- **GET `/api/v1/benchmarks/subjects`** : BenchHub 주제 목록 반환
-- **GET `/api/v1/benchmarks/tasks`** : 과업 유형 목록 반환
+- **GET `/api/v1/leaderboard/stats`** : 리더보드 통계 정보 반환
 
 ## 요청 및 응답 형식
 - 대부분의 엔드포인트는 JSON 요청/응답을 사용합니다.

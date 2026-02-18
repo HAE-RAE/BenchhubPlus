@@ -108,39 +108,53 @@ celery -A apps.worker.celery_app worker --loglevel=info
 ```
 apps/reflex_frontend/
 ├── reflex_frontend/
-│   └── reflex_frontend.py    # Main app file
+│   ├── reflex_frontend.py    # App entry point and router
+│   ├── state.py              # Centralized AppState
+│   ├── components/           # Reusable UI components
+│   │   ├── __init__.py
+│   │   ├── layout.py         # Header, navigation, footer, login card
+│   │   └── shared.py         # nav_item, stat_card helpers
+│   └── pages/                # Page components
+│       ├── __init__.py
+│       ├── evaluation.py     # Evaluation request page
+│       ├── status.py         # Task status monitoring
+│       ├── leaderboard.py    # Leaderboard browsing + AI search
+│       └── manager.py        # Admin dashboard
 ├── assets/
-│   ├── favicon.ico          # Favicon
-│   └── styles.css           # Custom styles
-├── rxconfig.py              # Reflex configuration
-├── requirements.txt         # Dependencies
-└── .gitignore              # Git ignore file
+│   ├── favicon.ico           # Favicon
+│   └── styles.css            # Custom styles
+├── rxconfig.py               # Reflex configuration
+└── requirements.txt          # Dependencies
 ```
 
 ### Key Components
 
-#### AppState Class
+#### AppState Class (state.py)
 ```python
 class AppState(rx.State):
+    # Authentication
+    is_authenticated: bool = False
+    user_email: str = ""
+    
     # Page navigation
     current_page: str = "evaluation"
     
-    # Evaluation settings
-    query: str = ""
-    models: List[Dict] = []
-    
-    # Status management
-    tasks: List[Dict] = []
-    
-    # Leaderboard filters
+    # Leaderboard filters + AI search
     language_filter: str = "All"
     subject_filter: str = "All"
+    task_type_filter: str = "All"
+    leaderboard_query: str = ""
+    leaderboard_is_off_topic: bool = False   # Off-topic detection flag
+    
+    # Task history (loaded from backend API)
+    task_history: List[Dict[str, Any]] = []
 ```
 
-#### Page Components
+#### Page Components (pages/)
 - `evaluation_page()`: Evaluation request interface
-- `status_page()`: Task status monitoring
-- `leaderboard_page()`: Results leaderboard
+- `status_page()`: Task status monitoring with real backend data
+- `leaderboard_page()`: Results leaderboard with AI-powered natural language search
+- `manager_page()`: Admin dashboard with health checks and stats
 
 ### Styling
 

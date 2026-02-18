@@ -11,11 +11,37 @@ All API endpoints are prefixed with `/api/v1`.
 
 ## 🔐 Authentication
 
-Currently, the API uses API key authentication for external model services. Future versions will include user authentication.
+The API uses JWT-based authentication. Obtain a token via the auth endpoints below.
 
 ```http
-Authorization: Bearer your-api-key
+Authorization: Bearer <jwt_token>
 ```
+
+### Auth Endpoints
+
+#### POST /api/v1/auth/dev-login
+
+Development-only login (requires `DEV_AUTH_BYPASS=true` in environment).
+
+**Request Body:**
+```json
+{
+  "email": "dev@test.com",
+  "name": "Developer"
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOi...",
+  "token_type": "bearer"
+}
+```
+
+#### GET /api/v1/auth/google/login
+
+Redirects to Google OAuth login page. In dev mode with `DEV_AUTH_BYPASS=true`, redirects directly to the frontend with a dev login flag.
 
 ## 📋 API Endpoints
 
@@ -286,64 +312,68 @@ Get system statistics and metrics.
 
 ---
 
-### Planner Service
+### Leaderboard AI Suggestion
 
-#### POST /api/v1/planner/generate-plan
+#### POST /api/v1/leaderboard/suggest
 
-Generate evaluation plan from natural language query.
+Suggest leaderboard filters from a natural language query using the Planner Agent.
 
 **Request Body:**
 ```json
 {
-  "query": "Compare these models on Korean math problems for high school students",
-  "context": {
-    "models": ["gpt-4", "claude-3"],
-    "preferred_metrics": ["accuracy", "f1_score"],
-    "sample_size_preference": "medium"
+  "query": "한국어 수학 추론을 잘하는 모델"
+}
+```
+
+**Response (evaluation query):**
+```json
+{
+  "query": "한국어 수학 추론을 잘하는 모델",
+  "language": "Korean",
+  "subject_type": "Science/Math",
+  "task_type": "Reasoning",
+  "subject_type_options": ["Science", "Science/Math"],
+  "plan_summary": "Korean · Science/Math · Reasoning 기준으로 추천 필터를 설정했어요.",
+  "used_planner": true,
+  "confidence": 0.7,
+  "rationale": "Planner agent parsed query successfully",
+  "metadata": {
+    "plan_config": { ... },
+    "planner_error": null
   }
 }
 ```
 
-**Response:**
+**Response (off-topic query, e.g. "Hello!"):**
 ```json
 {
-  "plan": {
-    "version": "1.0",
-    "metadata": {
-      "name": "Korean Math Evaluation",
-      "description": "Evaluation of models on Korean high school math problems",
-      "language": "Korean",
-      "subject_type": "Math",
-      "task_type": "QA",
-      "sample_size": 100
-    },
-    "evaluation": {
-      "metrics": ["accuracy", "f1_score"],
-      "timeout": 30,
-      "batch_size": 10
-    },
-    "datasets": [
-      {
-        "name": "korean_math_hs",
-        "type": "qa",
-        "source": "hret",
-        "filters": {
-          "language": "ko",
-          "subject": "math",
-          "level": "high_school"
-        }
-      }
-    ]
-  },
-  "confidence": 0.95,
-  "reasoning": "Query clearly specifies Korean language, math subject, and high school level..."
+  "query": "Hello!",
+  "language": null,
+  "subject_type": null,
+  "task_type": null,
+  "subject_type_options": [],
+  "plan_summary": "Hi there! This is the BenchHub Plus AI search feature...",
+  "used_planner": true,
+  "confidence": 0.0,
+  "rationale": "Query is not related to LLM evaluation. Showing usage guide.",
+  "metadata": { "reason": "off_topic" }
 }
 ```
 
-**Status Codes:**
-- `200`: Plan generated successfully
-- `400`: Invalid query
-- `503`: Planner service unavailable
+> **Note:** The Planner Agent outputs full language names (`"Korean"`, `"English"`) and normalized task types (`"Value/alignment"`). The Orchestrator also normalizes shorthand values (e.g. `"Ko"` → `"Korean"`, `"Value"` → `"Value/alignment"`).
+
+#### GET /api/v1/leaderboard/categories
+
+Get available filter categories (languages, subjects, task types) from seeded data.
+
+**Response:**
+```json
+{
+  "languages": ["Korean", "English"],
+  "subjects": ["Science", "Science/Math", "Tech.", "Tech./Coding", "Culture", ...],
+  "task_types": ["Knowledge", "Reasoning", "Value/alignment"]
+}
+```
 
 ---
 

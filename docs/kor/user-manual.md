@@ -109,14 +109,23 @@ Status 탭은 현재 작업 패널과 최근 작업 기록으로 구성됩니다
 
 ---
 
-## 5. Browse 탭 – 과거 리더보드 탐색
+## 5. Leaderboard 탭 – 리더보드 탐색
 
-Browse 탭은 `/api/v1/leaderboard/browse` 엔드포인트를 사용합니다.
+Leaderboard 탭은 `/api/v1/leaderboard/browse` 엔드포인트를 사용합니다.
+
+### AI 기반 검색
+
+검색창에 자연어 질의를 입력하고 (예: "한국어 수학 추론을 잘하는 모델") **Ask AI** 버튼을 클릭하세요. Planner Agent가:
+- Language, Subject, Task Type 필터를 자동으로 설정합니다
+- 초록색 요약 카드에 해석된 필터와 신뢰도 점수를 표시합니다
+
+평가와 무관한 입력 (예: "안녕?")을 하면 파란색 사용 안내 카드가 대신 표시됩니다.
+
+### 수동 필터링
 
 1. **Language**, **Subject**, **Task Type**, **Max Results** 필터를 선택합니다.
-2. **🔍 Search Leaderboard** 버튼을 클릭합니다.
+2. **Load Leaderboard** 버튼을 클릭합니다.
 3. 순위, 모델명, 점수, 메타데이터, 업데이트 시각이 포함된 테이블을 확인합니다.
-4. 상위 10개 모델을 보여주는 가로 막대 차트로 빠르게 비교할 수 있습니다.
 
 필터에 맞는 데이터가 없으면 안내 메시지가 표시됩니다.
 
@@ -145,7 +154,7 @@ Browse 탭은 `/api/v1/leaderboard/browse` 엔드포인트를 사용합니다.
 | **Evaluate 탭에 API 오류 표시** | API 키 유효성과 쿼터를 확인하고, 백엔드 로그에서 제공자별 오류를 확인합니다. |
 | **작업이 PENDING에서 멈춤** | 워커 컨테이너가 실행 중인지 `docker ps`로 확인하고 `docker-compose -f docker-compose.dev.yml restart worker`로 재시작합니다. |
 | **작업이 즉시 실패** | Task Details의 오류 메시지를 확인하세요. API Base URL 오타, 지원되지 않는 모델 유형, 제공자 장애가 흔한 원인입니다. |
-| **프런트엔드가 백엔드에 연결하지 못함** | `API_BASE_URL`이 노출한 백엔드 포트(기본 `http://localhost:8001`)와 일치하는지 확인합니다. |
+| **프런트엔드가 백엔드에 연결하지 못함** | `API_BASE_URL`이 백엔드 포트와 일치하는지 확인합니다. 네이티브 실행: `http://localhost:8000`, Docker 실행: `http://localhost:8001` |
 | **지표가 비어 보임** | 샘플 수가 적을 수 있습니다. 샘플 수를 늘리거나 평가 계획이 정상적으로 질문을 생성했는지 점검하세요. |
 
 ---

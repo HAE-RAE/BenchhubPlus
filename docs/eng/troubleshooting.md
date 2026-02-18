@@ -156,7 +156,7 @@ Task remains in PENDING state indefinitely
 
 #### Frontend Loading Issues
 
-**Issue**: Streamlit app won't load
+**Issue**: Reflex app won't load
 ```
 This site can't be reached
 ```
@@ -165,18 +165,53 @@ This site can't be reached
 1. **Check frontend logs**:
    ```bash
    docker-compose logs reflex
+   # or if running locally:
+   # check the terminal running reflex run
    ```
 
 2. **Verify port binding**:
    ```bash
    docker-compose ps
-   netstat -tlnp | grep 3000
+   lsof -i :3000
    ```
 
-3. **Check browser console**:
-   - Open browser developer tools
+3. **Kill stuck processes and restart**:
+   ```bash
+   lsof -ti:3000 | xargs kill -9
+   lsof -ti:8002 | xargs kill -9
+   # Then restart the Reflex frontend
+   ```
+
+4. **Check browser console**:
+   - Open browser developer tools (F12)
    - Look for JavaScript errors
-   - Check network requests
+   - Verify the WebSocket connection to the Reflex backend
+
+#### Authentication Issues
+
+**Issue**: Cannot log in / Google sign-in fails in dev mode
+
+**Solutions**:
+1. **Enable dev auth bypass**:
+   ```bash
+   # Set in .env
+   DEV_AUTH_BYPASS=true
+   ```
+2. **Ensure the Reflex frontend has the env var**:
+   ```bash
+   DEV_AUTH_BYPASS=true API_BASE_URL=http://localhost:8000 reflex run --env dev
+   ```
+3. **Verify backend port**: The frontend must point to the correct backend (`http://localhost:8000` for native, `http://localhost:8001` for Docker)
+
+#### HRET Not Available Warning
+
+**Issue**: `WARNING: HRET not available: No module named 'llm_eval'`
+
+**Solution**: Clone and install HRET locally:
+```bash
+git clone https://github.com/HAE-RAE/haerae-evaluation-toolkit.git
+pip install -e ./haerae-evaluation-toolkit
+```
 
 ### Performance Issues
 
