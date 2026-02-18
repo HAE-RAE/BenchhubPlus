@@ -239,6 +239,67 @@ def evaluation_page() -> rx.Component:
                 ),
                 width="100%",
             ),
+            # Data scale configuration
+            rx.card(
+                rx.vstack(
+                    rx.hstack(
+                        rx.icon("gauge", size=18, color="var(--accent-9)"),
+                        rx.text("Data Scale", weight="bold", size="3"),
+                        spacing="2",
+                        align="center",
+                    ),
+                    rx.text(
+                        "Choose the number of evaluation samples. Larger scales yield more reliable results but cost more.",
+                        size="2",
+                        color="var(--gray-9)",
+                    ),
+                    rx.radio_group(
+                        rx.hstack(
+                            rx.radio_group_item(value="small"),
+                            rx.vstack(
+                                rx.text("Small", size="2", weight="medium"),
+                                rx.text("50 samples · Fast & economical", size="1", color="var(--gray-9)"),
+                                spacing="0",
+                                align="start",
+                            ),
+                            rx.spacer(),
+                            rx.radio_group_item(value="medium"),
+                            rx.vstack(
+                                rx.text("Medium", size="2", weight="medium"),
+                                rx.text("100 samples · Balanced", size="1", color="var(--gray-9)"),
+                                spacing="0",
+                                align="start",
+                            ),
+                            rx.spacer(),
+                            rx.radio_group_item(value="large"),
+                            rx.vstack(
+                                rx.text("Large", size="2", weight="medium"),
+                                rx.text("250 samples · Thorough", size="1", color="var(--gray-9)"),
+                                spacing="0",
+                                align="start",
+                            ),
+                            rx.spacer(),
+                            rx.radio_group_item(value="full"),
+                            rx.vstack(
+                                rx.text("Full", size="2", weight="medium"),
+                                rx.text("500 samples · Comprehensive", size="1", color="var(--gray-9)"),
+                                spacing="0",
+                                align="start",
+                            ),
+                            spacing="4",
+                            width="100%",
+                            flex_wrap="wrap",
+                        ),
+                        value=AppState.sample_scale,
+                        on_change=AppState.set_sample_scale,
+                        size="2",
+                    ),
+                    spacing="3",
+                    width="100%",
+                    align="start",
+                ),
+                width="100%",
+            ),
             # Submit button
             rx.center(
                 rx.button(

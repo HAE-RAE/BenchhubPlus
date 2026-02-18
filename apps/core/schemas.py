@@ -24,12 +24,30 @@ class ModelInfo(BaseModel):
         return v.rstrip("/")
 
 
+SAMPLE_SCALE_OPTIONS = {
+    "small": {"label": "Small (50)", "sample_size": 50},
+    "medium": {"label": "Medium (100)", "sample_size": 100},
+    "large": {"label": "Large (250)", "sample_size": 250},
+    "full": {"label": "Full (500)", "sample_size": 500},
+}
+
+
 class LeaderboardQuery(BaseModel):
     """Query for generating leaderboard."""
     
     query: str = Field(..., description="Natural language query")
     models: List[ModelInfo] = Field(..., description="List of models to evaluate")
+    sample_scale: str = Field(
+        default="medium",
+        description="Data scale for evaluation: small/medium/large/full",
+    )
     
+    @validator("sample_scale")
+    def validate_sample_scale(cls, v: str) -> str:
+        if v not in SAMPLE_SCALE_OPTIONS:
+            raise ValueError(f"sample_scale must be one of {list(SAMPLE_SCALE_OPTIONS.keys())}")
+        return v
+
     @validator("models")
     def validate_models(cls, v: List[ModelInfo]) -> List[ModelInfo]:
         """Validate models list."""

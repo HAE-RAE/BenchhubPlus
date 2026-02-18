@@ -51,6 +51,7 @@ class AppState(rx.State):
     models: List[Dict[str, Any]] = []
     num_models: int = 2
     query: str = ""
+    sample_scale: str = "medium"
     current_results: Optional[Dict[str, Any]] = None
     is_loading: bool = False
     is_submitting: bool = False
@@ -134,6 +135,9 @@ class AppState(rx.State):
 
     def set_query(self, value: str):
         self.query = value
+
+    def set_sample_scale(self, value: str):
+        self.sample_scale = value
 
     # =====================================================================
     # Computed properties
@@ -385,6 +389,7 @@ class AppState(rx.State):
                     }
                     for m in self.models
                 ],
+                "sample_scale": self.sample_scale,
             }
 
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
