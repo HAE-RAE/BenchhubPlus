@@ -266,7 +266,7 @@ class PlanConfig(BaseModel):
     @validator("task_type")
     def validate_task_type(cls, v: str) -> str:
         """Validate task type."""
-        valid_types = ["Knowledge", "Reasoning", "Value", "Alignment"]
+        valid_types = ["Knowledge", "Reasoning", "Value", "Alignment", "Value/alignment"]
         if v not in valid_types:
             raise ValueError(f"task_type must be one of {valid_types}")
         return v

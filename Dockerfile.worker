@@ -34,17 +34,14 @@ ENV HF_HOME=/app/.cache/huggingface \
     TOKENIZERS_PARALLELISM=false
 
 RUN if [ -n "$HRET_PREFETCH_MODEL" ]; then \
-    HRET_PREFETCH_MODEL="$HRET_PREFETCH_MODEL" HRET_PREFETCH_REVISION="$HRET_PREFETCH_REVISION" \
-    python - <<'PY'
-import os
-from transformers import AutoModel, AutoTokenizer
-model = os.environ.get('HRET_PREFETCH_MODEL')
-revision = os.environ.get('HRET_PREFETCH_REVISION') or None
-if model:
-    AutoTokenizer.from_pretrained(model, revision=revision)
-    AutoModel.from_pretrained(model, revision=revision)
-PY
-    ; fi
+    python -c "\
+import os; \
+from transformers import AutoModel, AutoTokenizer; \
+model = os.environ.get('HRET_PREFETCH_MODEL'); \
+revision = os.environ.get('HRET_PREFETCH_REVISION') or None; \
+AutoTokenizer.from_pretrained(model, revision=revision) if model else None; \
+AutoModel.from_pretrained(model, revision=revision) if model else None; \
+"; fi
 
 # Copy application code
 COPY apps/ ./apps/
