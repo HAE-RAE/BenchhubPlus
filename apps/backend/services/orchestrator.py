@@ -414,6 +414,33 @@ class EvaluationOrchestrator:
             sample_size=100
         )
 
+    # Maps Planner Agent shorthand values to actual DB values
+    _LANGUAGE_NORMALIZE: Dict[str, str] = {
+        "ko": "Korean",
+        "kr": "Korean",
+        "korean": "Korean",
+        "en": "English",
+        "eng": "English",
+        "english": "English",
+    }
+    _TASK_TYPE_NORMALIZE: Dict[str, str] = {
+        "knowledge": "Knowledge",
+        "reasoning": "Reasoning",
+        "value": "Value/alignment",
+        "alignment": "Value/alignment",
+        "value/alignment": "Value/alignment",
+    }
+
+    def _normalize_language(self, raw: Optional[str]) -> Optional[str]:
+        if not raw:
+            return None
+        return self._LANGUAGE_NORMALIZE.get(raw.strip().lower(), raw.strip())
+
+    def _normalize_task_type(self, raw: Optional[str]) -> Optional[str]:
+        if not raw:
+            return None
+        return self._TASK_TYPE_NORMALIZE.get(raw.strip().lower(), raw.strip())
+
     def suggest_leaderboard_filters(self, query: str) -> LeaderboardSuggestionResponse:
         """Suggest leaderboard filters based on a natural language query."""
         
@@ -434,14 +461,41 @@ class EvaluationOrchestrator:
         plan_config: Optional[PlanConfig] = None
         used_planner = False
         planner_error: Optional[str] = None
+        is_off_topic = False
         
         if self.planner_agent:
             try:
                 plan_config = self.planner_agent.parse_query(normalized_query)
-                used_planner = True
+                if plan_config is None:
+                    is_off_topic = True
+                else:
+                    used_planner = True
             except Exception as e:
                 planner_error = str(e)
                 logger.warning("Planner failed to parse query '%s': %s", normalized_query, e)
+        
+        if is_off_topic:
+            guide_message = (
+                "Hi there! This is the BenchHub Plus AI search feature.\n\n"
+                "Use this search bar to find and compare LLM benchmark results. "
+                "Try queries like:\n\n"
+                '• "Best model for Korean math reasoning"\n'
+                '• "English coding knowledge benchmark"\n'
+                '• "Which model excels at science reasoning?"\n'
+                '• "Korean culture knowledge evaluation results"'
+            )
+            return LeaderboardSuggestionResponse(
+                query=normalized_query,
+                language=None,
+                subject_type=None,
+                task_type=None,
+                subject_type_options=[],
+                plan_summary=guide_message,
+                used_planner=True,
+                confidence=0.0,
+                rationale="Query is not related to LLM evaluation. Showing usage guide.",
+                metadata={"reason": "off_topic"},
+            )
         
         if plan_config is None:
             plan_config = self._default_plan_config()
@@ -454,8 +508,8 @@ class EvaluationOrchestrator:
             subject_options = [raw_subjects]
         
         primary_subject = subject_options[-1] if subject_options else None
-        language = plan_config.language or None
-        task_type = plan_config.task_type or None
+        language = self._normalize_language(plan_config.language)
+        task_type = self._normalize_task_type(plan_config.task_type)
         
         summary_parts = [
             language or "모든 언어",

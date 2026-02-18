@@ -29,8 +29,11 @@ class PlannerAgent:
         self.model = settings.planner_model
         self.temperature = settings.planner_temperature
     
-    def parse_query(self, query: str) -> PlanConfig:
-        """Parse natural language query into structured plan configuration."""
+    def parse_query(self, query: str) -> Optional[PlanConfig]:
+        """Parse natural language query into structured plan configuration.
+
+        Returns ``None`` when the query is unrelated to evaluation (e.g. greetings).
+        """
         
         lines = []
         for coarse in BENCHHUB_COARSE_CATEGORIES:
@@ -46,29 +49,42 @@ Your job: Convert a natural-language query into a STRICT BenchHub plan JSON with
 1. problem_type: Problem format - one of ["Binary", "MCQA", "short-form", "open-ended"]
 2. target_type: Target scope - one of ["General", "Local"] 
 3. subject_type: Subject categories - array of categories chosen ONLY from the allowed BenchHub categories below
-4. task_type: Task type - one of ["Knowledge", "Reasoning", "Value", "Alignment"]
+4. task_type: Task type - one of ["Knowledge", "Reasoning", "Value/alignment"]
 5. external_tool_usage: Whether external tools are needed - boolean
-6. language: Target language (Ko, En, etc.)
+6. language: Target language - MUST be one of ["Korean", "English"]. Use the FULL name, not abbreviations.
 7. sample_size: Number of samples to evaluate (default: 100, max: 1000)
+
+IMPORTANT — OFF-TOPIC / NON-EVALUATION QUERIES:
+If the user query is NOT related to LLM evaluation, benchmarking, or model comparison (e.g. greetings, chitchat, unrelated questions), respond with EXACTLY this JSON:
+{{"_not_evaluation": true}}
+Do NOT attempt to generate a plan for non-evaluation queries.
 
 STRICT RULES:
 - Use ONLY the allowed categories. DO NOT invent new categories or variations. Spelling must match exactly.
 - subject_type must be a JSON array (e.g., ["Science","Science/Math"]); at least one valid category.
+- language MUST be "Korean" or "English" (full word, not Ko/En).
+- task_type MUST be exactly one of: "Knowledge", "Reasoning", "Value/alignment".
 - Output ONLY a single JSON object. No explanation, no extra text.
-- If the user intent is vague, prefer coarse categories (e.g., "Science") and a safe default sample_size (100).
+- If the user intent is vague BUT related to evaluation, prefer coarse categories (e.g., "Science") and a safe default sample_size (100).
 
 Allowed BenchHub categories (coarse + examples of fine):
 {categories_text}
 
 Examples (STRICT JSON only):
 Query: "한국어로 된 프로그래밍 문제를 잘 푸는 모델을 찾고 싶어"
-Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Tech.", "Tech./Coding"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Ko", "sample_size": 100}}
+Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Tech.", "Tech./Coding"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 100}}
 
 Query: "Which model is best at English math problems?"
-Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Science", "Science/Math"], "task_type": "Reasoning", "external_tool_usage": false, "language": "En", "sample_size": 100}}
+Response: {{"problem_type": "MCQA", "target_type": "General", "subject_type": ["Science", "Science/Math"], "task_type": "Reasoning", "external_tool_usage": false, "language": "English", "sample_size": 100}}
 
 Query: "I need to evaluate models on Korean traditional culture knowledge with 200 samples"
-Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Culture", "Culture/Tradition"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Ko", "sample_size": 200}}
+Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Culture", "Culture/Tradition"], "task_type": "Knowledge", "external_tool_usage": false, "language": "Korean", "sample_size": 200}}
+
+Query: "안녕?"
+Response: {{"_not_evaluation": true}}
+
+Query: "What's the weather today?"
+Response: {{"_not_evaluation": true}}
 """
         
         user_prompt = f"Query: {query}\nResponse:"
@@ -95,6 +111,11 @@ Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Cu
                 # Fallback parsing
                 parsed_data = json.loads(content)
             
+            # Check for off-topic signal
+            if parsed_data.get("_not_evaluation"):
+                logger.info(f"Query is not evaluation-related: {query}")
+                return None
+            
             # Validate and create PlanConfig
             plan_config = PlanConfig(**parsed_data)
             
@@ -103,16 +124,8 @@ Response: {{"problem_type": "MCQA", "target_type": "Local", "subject_type": ["Cu
             
         except Exception as e:
             logger.error(f"Failed to parse query '{query}': {e}")
-            # Return default configuration
-            return PlanConfig(
-                problem_type="MCQA",
-                target_type="General", 
-                subject_type=["Science"],
-                task_type="Knowledge",
-                external_tool_usage=False,
-                language="Korean",
-                sample_size=100
-            )
+            # Return None so caller can show an appropriate fallback message
+            return None
     
     def generate_plan_yaml(
         self, 

@@ -108,39 +108,53 @@ celery -A apps.worker.celery_app worker --loglevel=info
 ```
 apps/reflex_frontend/
 ├── reflex_frontend/
-│   └── reflex_frontend.py    # 메인 앱 파일
+│   ├── reflex_frontend.py    # 앱 진입점 및 라우터
+│   ├── state.py              # 중앙 집중형 AppState
+│   ├── components/           # 재사용 UI 컴포넌트
+│   │   ├── __init__.py
+│   │   ├── layout.py         # 헤더, 네비게이션, 푸터, 로그인 카드
+│   │   └── shared.py         # nav_item, stat_card 헬퍼
+│   └── pages/                # 페이지 컴포넌트
+│       ├── __init__.py
+│       ├── evaluation.py     # 평가 요청 페이지
+│       ├── status.py         # 작업 상태 모니터링
+│       ├── leaderboard.py    # 리더보드 + AI 검색
+│       └── manager.py        # 관리자 대시보드
 ├── assets/
-│   ├── favicon.ico          # 파비콘
-│   └── styles.css           # 커스텀 스타일
-├── rxconfig.py              # Reflex 설정
-├── requirements.txt         # 의존성
-└── .gitignore              # Git 무시 파일
+│   ├── favicon.ico           # 파비콘
+│   └── styles.css            # 커스텀 스타일
+├── rxconfig.py               # Reflex 설정
+└── requirements.txt          # 의존성
 ```
 
 ### 주요 컴포넌트
 
-#### AppState 클래스
+#### AppState 클래스 (state.py)
 ```python
 class AppState(rx.State):
+    # 인증
+    is_authenticated: bool = False
+    user_email: str = ""
+    
     # 페이지 네비게이션
     current_page: str = "evaluation"
     
-    # 평가 설정
-    query: str = ""
-    models: List[Dict] = []
-    
-    # 상태 관리
-    tasks: List[Dict] = []
-    
-    # 리더보드 필터
+    # 리더보드 필터 + AI 검색
     language_filter: str = "All"
     subject_filter: str = "All"
+    task_type_filter: str = "All"
+    leaderboard_query: str = ""
+    leaderboard_is_off_topic: bool = False   # Off-topic 감지 플래그
+    
+    # 작업 이력 (백엔드 API에서 로드)
+    task_history: List[Dict[str, Any]] = []
 ```
 
-#### 페이지 컴포넌트
+#### 페이지 컴포넌트 (pages/)
 - `evaluation_page()`: 평가 요청 인터페이스
-- `status_page()`: 작업 상태 모니터링
-- `leaderboard_page()`: 결과 리더보드
+- `status_page()`: 실제 백엔드 데이터 기반 작업 상태 모니터링
+- `leaderboard_page()`: AI 자연어 검색이 포함된 리더보드
+- `manager_page()`: 관리자 대시보드 (헬스 체크, 통계)
 
 ### 스타일링
 

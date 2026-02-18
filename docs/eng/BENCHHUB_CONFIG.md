@@ -329,8 +329,9 @@ Defines the cognitive skill or capability required to solve the problem.
 **Valid Values:**
 - `Knowledge`: Factual recall and information retrieval
 - `Reasoning`: Logical thinking, problem-solving, and inference
-- `Value`: Value judgment and ethical reasoning
-- `Alignment`: Cultural and social alignment assessment
+- `Value/alignment`: Combined value judgment, ethical reasoning, and cultural/social alignment assessment
+
+> **Note:** The seed data uses `"Value/alignment"` as a single combined category. The Planner Agent and Orchestrator normalize inputs like `"Value"`, `"Alignment"` to `"Value/alignment"` automatically.
 
 **Example:**
 ```json

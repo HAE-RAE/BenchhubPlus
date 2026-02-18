@@ -115,30 +115,49 @@ Docker keeps the PostgreSQL and Redis data volumes so you will not lose previous
 
 ---
 
-## 🧑‍💻 Alternative: Local Python environment
+## 🧑‍💻 Alternative: Hybrid Local environment
 
-Prefer running services directly on your machine? Use the provided setup script (requires Python 3.11+):
+Prefer running Python services natively for faster iteration? Use Docker only for PostgreSQL and Redis:
 
 ```bash
-./scripts/setup.sh
+# 1. Start infrastructure
+docker compose -f docker-compose.dev.yml up -d postgres redis
+
+# 2. Setup Python environment
+python3.11 -m venv venv
 source venv/bin/activate
+pip install -e .
+
+# 3. Install HRET (required for evaluation tasks)
+git clone https://github.com/HAE-RAE/haerae-evaluation-toolkit.git
+pip install -e ./haerae-evaluation-toolkit
+
+# 4. Configure environment
+cp .env.example .env
+# Edit .env: set OPENAI_API_KEY, DEV_AUTH_BYPASS=true
+# Ensure DATABASE_URL=postgresql://benchhub:dev_password@localhost:5433/benchhub_plus_dev
+# Ensure REDIS_URL=redis://localhost:6380/0
+
+# 5. Copy seed data (if available)
+cp seeds/seed_data.parquet data/seed_data.parquet
 ```
 
 Then start each component in a separate terminal:
 
 ```bash
 # Terminal 1 – FastAPI backend
-python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
+PYTHONPATH="." python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 
 # Terminal 2 – Celery worker
 celery -A apps.worker.celery_app worker --loglevel=info
 
 # Terminal 3 – Reflex frontend
 cd apps/reflex_frontend
-API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
+DEV_AUTH_BYPASS=true API_BASE_URL=http://localhost:8000 PUBLIC_API_BASE_URL=http://localhost:8000 \
+  reflex run --env dev --backend-port 8002 --frontend-port 3000
 ```
 
-For this mode you must provide your own PostgreSQL and Redis instances that match the connection details in `.env` (or switch to SQLite/Redis alternatives).
+> **Tip:** With `DEV_AUTH_BYPASS=true`, you can click the "Dev Login" button on the frontend to log in without Google OAuth.
 
 ---
 

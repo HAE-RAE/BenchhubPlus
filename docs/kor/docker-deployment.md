@@ -4,7 +4,7 @@ Docker와 Docker Compose를 사용해 BenchHub Plus를 배포하는 방법을 �
 
 ## 🐳 개요
 필수 컨테이너
-- **frontend**: Streamlit UI
+- **frontend**: Reflex UI
 - **backend**: FastAPI API
 - **worker**: Celery 작업 처리기
 - **postgres**: 데이터베이스

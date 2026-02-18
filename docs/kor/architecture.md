@@ -4,7 +4,7 @@ BenchHub Plus의 전체 구조와 주요 컴포넌트를 요약합니다.
 
 ## 🏗️ 상위 구조
 ```
-Streamlit 프런트엔드 ⇄ FastAPI 백엔드 ⇄ Celery 워커
+Reflex 프런트엔드 ⇄ FastAPI 백엔드 ⇄ Celery 워커
                         │               │
                         ▼               ▼
                   PostgreSQL DB      Redis 캐시
@@ -16,6 +16,9 @@ Streamlit 프런트엔드 ⇄ FastAPI 백엔드 ⇄ Celery 워커
 
 ### 프런트엔드 (Reflex)
 - 파일: `apps/reflex_frontend/rxconfig.py`, `apps/reflex_frontend/reflex_frontend/`
+  - `state.py`: 중앙 집중형 앱 상태 (`AppState`)
+  - `components/`: 재사용 UI 컴포넌트 (헤더, 네비게이션, 푸터)
+  - `pages/`: 페이지 컴포넌트 (evaluation, status, leaderboard, manager)
 - 역할: 사용자 입력 수집, 상태 시각화, API 호출
 - 기술: Reflex, Tailwind, httpx
 
@@ -41,13 +44,22 @@ Streamlit 프런트엔드 ⇄ FastAPI 백엔드 ⇄ Celery 워커
 5. Redis 캐시 업데이트 후 프런트엔드에서 실시간 조회
 
 ## 🧠 AI/ML 구성
-- **플래너 에이전트**: 자연어 질의를 구조화된 평가 계획으로 변환
+- **플래너 에이전트**: 자연어 질의를 구조화된 평가 계획으로 변환. 평가와 무관한 입력(인사, 잡담 등)은 off-topic으로 감지하여 사용 안내 메시지를 반환
+- **언어/태스크 정규화**: Orchestrator가 Planner 출력을 시드 데이터 기준으로 정규화 (예: "Ko"→"Korean", "Value"→"Value/alignment")
 - **LLM 실행기**: OpenAI, HuggingFace, LiteLLM 등을 통해 모델 호출
 - **평가 메트릭**: 정확도, F1, LLM 판정 등 복합 지표 지원
 
+## 개발 환경 배포 방식
+
+**방법 1 — 전체 Docker** (`docker-compose.dev.yml`):
+모든 서비스를 Docker 컨테이너로 실행합니다.
+
+**방법 2 — 하이브리드 로컬** (빠른 반복 개발에 권장):
+인프라(PostgreSQL 포트 5433, Redis 포트 6380)만 Docker로 실행하고, Python 서비스(FastAPI, Celery, Reflex)는 네이티브로 실행합니다. `.env`에 `DEV_AUTH_BYPASS=true`를 설정하면 Google OAuth 없이 개발자 로그인을 사용할 수 있습니다.
+
 ## 확장 고려 사항
 - 서비스 간 통신은 REST API 기반이며, 추가 서비스 연동을 위해 gRPC 또는 메시지 큐를 도입할 수 있습니다.
-- 데이터베이스는 PostgreSQL을 기본으로 설계되었으나, 소규모 환경에서는 SQLite로도 실행할 수 있습니다.
+- 데이터베이스는 PostgreSQL을 기본으로 설계되었습니다.
 - Redis는 필수 컴포넌트이므로 장애 조치 구성을 권장합니다.
 
 ## 모니터링 및 로깅

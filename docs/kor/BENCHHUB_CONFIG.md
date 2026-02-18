@@ -329,8 +329,9 @@
 **사용 가능한 값:**
 - `Knowledge`: 사실 기반 지식 회상 및 검색
 - `Reasoning`: 논리적 사고, 문제 해결, 추론
-- `Value`: 가치 판단 및 윤리적 사고
-- `Alignment`: 문화·사회적 정렬성 평가
+- `Value/alignment`: 가치 판단, 윤리적 사고, 문화·사회적 정렬성 평가를 통합한 카테고리
+
+> **참고:** 시드 데이터는 `"Value/alignment"`를 단일 결합 카테고리로 사용합니다. Planner Agent와 Orchestrator가 `"Value"`, `"Alignment"` 등의 입력을 `"Value/alignment"`로 자동 정규화합니다.
 
 **예시:**
 ```json

@@ -6,7 +6,7 @@ Complete guide for deploying BenchHub Plus using Docker and Docker Compose.
 
 BenchHub Plus uses a multi-container Docker architecture with the following services:
 
-- **Frontend**: Streamlit web interface
+- **Frontend**: Reflex web interface
 - **Backend**: FastAPI REST API
 - **Worker**: Celery task processor
 - **Database**: PostgreSQL data storage
