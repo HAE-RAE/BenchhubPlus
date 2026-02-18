@@ -19,8 +19,7 @@ from ...core.schemas import (
     LeaderboardSuggestionResponse,
     TaskResponse,
     ModelInfo,
-    PlanConfig,
-    SAMPLE_SCALE_OPTIONS,
+    PlanConfig
 )
 from ...core.security import sanitize_model_name, validate_api_endpoint, mask_api_key
 from ..repositories.leaderboard_repo import LeaderboardRepository
@@ -58,20 +57,17 @@ class EvaluationOrchestrator:
         try:
             plan_metadata: Optional[Dict[str, Any]] = None
             stored_credentials = self.credential_service.register_models(query.models)
+            # Commit credentials immediately so the worker can always find them,
+            # regardless of whether the rest of this transaction succeeds.
+            self.db.commit()
 
             secure_models = self._build_secure_models(query.models, stored_credentials)
-
-            sample_size = SAMPLE_SCALE_OPTIONS.get(
-                query.sample_scale, SAMPLE_SCALE_OPTIONS["medium"]
-            )["sample_size"]
 
             # Create evaluation plan using planner agent
             if self.planner_agent:
                 plan_metadata = self.planner_agent.create_evaluation_plan(
                     query.query, secure_models
                 )
-                if "config" in plan_metadata:
-                    plan_metadata["config"]["sample_size"] = sample_size
                 plan_metadata = self._attach_credential_references(
                     plan_metadata,
                     stored_credentials
@@ -82,8 +78,7 @@ class EvaluationOrchestrator:
                 plan_details = self._create_fallback_plan(
                     query,
                     secure_models,
-                    stored_credentials,
-                    sample_size=sample_size,
+                    stored_credentials
                 )
             
             # Check cache first
@@ -125,7 +120,10 @@ class EvaluationOrchestrator:
             try:
                 from ...worker.tasks import run_evaluation
 
-                async_result = run_evaluation.delay(task_id, plan_details)
+                async_result = run_evaluation.apply_async(
+                    args=[task_id, plan_details],
+                    task_id=task_id,
+                )
                 logger.info(
                     "Dispatched evaluation task %s to worker (celery id=%s)",
                     task_id,
@@ -280,13 +278,10 @@ class EvaluationOrchestrator:
         self,
         query: LeaderboardQuery,
         secure_models: List[ModelInfo],
-        stored_credentials: List[StoredCredential],
-        sample_size: Optional[int] = None,
+        stored_credentials: List[StoredCredential]
     ) -> str:
         """Create fallback plan when planner agent is not available."""
         plan_config = self._default_plan_config()
-        if sample_size is not None:
-            plan_config.sample_size = sample_size
         plan_yaml = build_plan_yaml(plan_config, secure_models)
         if not plan_yaml:
             raise RuntimeError("Fallback plan_yaml generation returned empty content")

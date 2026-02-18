@@ -32,6 +32,20 @@ SAMPLE_SCALE_OPTIONS = {
 }
 
 
+def resolve_sample_size(scale: str) -> int:
+    """Return the integer sample count for a given scale string."""
+    if scale in SAMPLE_SCALE_OPTIONS:
+        return SAMPLE_SCALE_OPTIONS[scale]["sample_size"]
+    # "custom:N" format
+    if scale.startswith("custom:"):
+        try:
+            n = int(scale.split(":", 1)[1])
+            return max(1, min(n, 10000))
+        except ValueError:
+            pass
+    return 100  # fallback
+
+
 class LeaderboardQuery(BaseModel):
     """Query for generating leaderboard."""
     
@@ -39,14 +53,28 @@ class LeaderboardQuery(BaseModel):
     models: List[ModelInfo] = Field(..., description="List of models to evaluate")
     sample_scale: str = Field(
         default="medium",
-        description="Data scale for evaluation: small/medium/large/full",
+        description="Data scale: small/medium/large/full or custom:N",
     )
+    # Suggested category labels from the /suggest step (optional, stored for display)
+    category_language: Optional[str] = Field(None, description="Suggested language category")
+    category_subject: Optional[str] = Field(None, description="Suggested subject category")
+    category_task_type: Optional[str] = Field(None, description="Suggested task type category")
     
     @validator("sample_scale")
     def validate_sample_scale(cls, v: str) -> str:
-        if v not in SAMPLE_SCALE_OPTIONS:
-            raise ValueError(f"sample_scale must be one of {list(SAMPLE_SCALE_OPTIONS.keys())}")
-        return v
+        if v in SAMPLE_SCALE_OPTIONS:
+            return v
+        if v.startswith("custom:"):
+            try:
+                int(v.split(":", 1)[1])
+                return v
+            except ValueError:
+                pass
+        raise ValueError(f"sample_scale must be one of {list(SAMPLE_SCALE_OPTIONS.keys())} or 'custom:N'")
+
+    @property
+    def sample_size(self) -> int:
+        return resolve_sample_size(self.sample_scale)
 
     @validator("models")
     def validate_models(cls, v: List[ModelInfo]) -> List[ModelInfo]:

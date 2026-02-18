@@ -441,6 +441,30 @@ body {
   }
 }
 
+/* Eval config tab: appear + 3x pulse highlight */
+@keyframes tabAppear {
+  0%   { opacity: 0; transform: translateY(10px) scale(0.96); }
+  60%  { opacity: 1; transform: translateY(-2px) scale(1.01); }
+  100% { opacity: 1; transform: translateY(0)    scale(1);    }
+}
+
+@keyframes tabPulse {
+  0%, 100% { box-shadow: 0 0 0 0   rgba(99, 102, 241, 0);   }
+  50%       { box-shadow: 0 0 0 5px rgba(99, 102, 241, 0.28); }
+}
+
+.tab-appear {
+  animation:
+    tabAppear 0.35s ease-out both,
+    tabPulse  1.2s ease-in-out 0.35s 3;
+}
+
+/* Eval query box focus glow */
+.eval-input-box:focus-within {
+  border-color: var(--accent-7) !important;
+  box-shadow: 0 0 0 3px var(--accent-a4);
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
   .card-content {

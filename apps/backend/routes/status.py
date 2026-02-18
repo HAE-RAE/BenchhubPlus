@@ -180,6 +180,41 @@ async def get_task_status(
 
         if task.error_message:
             result["error_message"] = task.error_message
+
+        # Include request_payload for model configs + sample scale (strip api_key)
+        if task.request_payload:
+            try:
+                rp = json.loads(task.request_payload)
+                models_safe = [
+                    {k: v for k, v in m.items() if k != "api_key"}
+                    for m in (rp.get("models") or [])
+                ]
+                result["request_payload"] = {
+                    "sample_scale": rp.get("sample_scale", "medium"),
+                    "models": models_safe,
+                    "query": rp.get("query", ""),
+                    "category_language": rp.get("category_language"),
+                    "category_subject": rp.get("category_subject"),
+                    "category_task_type": rp.get("category_task_type"),
+                }
+            except Exception:
+                pass
+
+        # Enrich with Celery PROGRESS meta when task is running
+        if task.status in ("PENDING", "STARTED", "PROGRESS"):
+            try:
+                async_result = celery_app.AsyncResult(task.task_id)
+                if async_result.state == "PROGRESS" and isinstance(async_result.info, dict):
+                    meta = async_result.info
+                    result["stage"] = meta.get("status", "")
+                    result["stage_current"] = meta.get("current", 0)
+                    result["stage_total"] = meta.get("total", 1)
+                elif async_result.state == "STARTED":
+                    result["stage"] = "Starting evaluation"
+                    result["stage_current"] = 0
+                    result["stage_total"] = 1
+            except Exception:
+                pass
         
         return result
         
@@ -330,6 +365,14 @@ async def list_tasks(
             page_size=page_size,
         )
         
+        def _extract_query(task) -> str:
+            if task.request_payload:
+                try:
+                    return json.loads(task.request_payload).get("query", "") or ""
+                except Exception:
+                    pass
+            return ""
+
         return {
             "tasks": [
                 {
@@ -341,6 +384,7 @@ async def list_tasks(
                     "user_id": task.user_id,
                     "model_count": task.model_count,
                     "has_error": bool(task.error_message),
+                    "query": _extract_query(task),
                 }
                 for task in tasks
             ],
@@ -353,6 +397,35 @@ async def list_tasks(
         raise
     except Exception as e:
         logger.error(f"Failed to list tasks: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.delete("/tasks/{task_id}/hard")
+async def delete_task(
+    task_id: str = Path(..., description="Task ID"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Hard-delete a task from the database."""
+    try:
+        repo = TasksRepository(db)
+        task = repo.get_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        _authorize_task_access(task, current_user)
+        repo.delete_task(task_id)
+        AuditService(db).log_action(
+            action="task.delete",
+            resource="task",
+            resource_id=task_id,
+            user_id=getattr(current_user, "id", None),
+            metadata=None,
+        )
+        return {"message": f"Task {task_id} deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete task {task_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

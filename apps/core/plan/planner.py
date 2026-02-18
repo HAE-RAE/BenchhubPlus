@@ -128,12 +128,73 @@ Response: {{"_not_evaluation": true}}
             return None
     
     def generate_plan_yaml(
-        self, 
-        plan_config: PlanConfig, 
+        self,
+        plan_config: PlanConfig,
         models: List[ModelInfo]
     ) -> str:
         """Generate HRET-compatible plan.yaml from configuration and models."""
         return build_plan_yaml(plan_config, models)
+
+    def create_evaluation_plan(
+        self,
+        query: str,
+        models: List[ModelInfo]
+    ) -> Dict[str, Any]:
+        """Create complete evaluation plan from query and models."""
+        plan_config = self.parse_query(query)
+        plan_yaml = self.generate_plan_yaml(plan_config, models)
+        return {
+            "query": query,
+            "config": plan_config.dict(),
+            "models": [model.dict(exclude={"api_key"}) for model in models],
+            "plan_yaml": plan_yaml,
+            "estimated_duration": self._estimate_duration(plan_config, len(models)),
+            "estimated_cost": self._estimate_cost(plan_config, models),
+        }
+
+    def _estimate_duration(self, config: PlanConfig, num_models: int) -> int:
+        """Estimate evaluation duration in seconds."""
+        base_time = config.sample_size * num_models
+        overhead = 30 + (num_models * 10)
+        return base_time + overhead
+
+    def _estimate_cost(self, config: PlanConfig, models: List[ModelInfo]) -> float:
+        """Estimate evaluation cost in USD."""
+        cost_per_sample = {
+            "gpt-4": 0.03,
+            "gpt-3.5-turbo": 0.002,
+            "claude": 0.01,
+            "default": 0.005,
+        }
+        total_cost = 0.0
+        for model in models:
+            model_cost = cost_per_sample.get(model.name.lower(), cost_per_sample["default"])
+            total_cost += model_cost * config.sample_size
+        return round(total_cost, 2)
+
+    def validate_plan(self, plan_yaml: str) -> bool:
+        """Validate generated plan YAML."""
+        try:
+            plan_data = yaml.safe_load(plan_yaml)
+            required_keys = ["version", "metadata", "models", "datasets"]
+            for key in required_keys:
+                if key not in plan_data:
+                    logger.error(f"Missing required key in plan: {key}")
+                    return False
+            if not plan_data["models"]:
+                logger.error("No models specified in plan")
+                return False
+            if not plan_data["datasets"]:
+                logger.error("No datasets specified in plan")
+                return False
+            logger.info("Plan validation successful")
+            return True
+        except yaml.YAMLError as e:
+            logger.error(f"Invalid YAML in plan: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Plan validation error: {e}")
+            return False
 
 
 def build_plan_yaml(plan_config: PlanConfig, models: List[ModelInfo]) -> str:
@@ -225,95 +286,6 @@ def build_plan_yaml(plan_config: PlanConfig, models: List[ModelInfo]) -> str:
         plan_data["models"].append(model_config)
 
     return yaml.dump(plan_data, default_flow_style=False, allow_unicode=True)
-    
-    def create_evaluation_plan(
-        self, 
-        query: str, 
-        models: List[ModelInfo]
-    ) -> Dict[str, Any]:
-        """Create complete evaluation plan from query and models."""
-        
-        # Parse the natural language query
-        plan_config = self.parse_query(query)
-        
-        # Generate YAML configuration
-        plan_yaml = self.generate_plan_yaml(plan_config, models)
-        
-        # Create plan metadata
-        plan_metadata = {
-            "query": query,
-            "config": plan_config.dict(),
-            "models": [model.dict(exclude={"api_key"}) for model in models],
-            "plan_yaml": plan_yaml,
-            "estimated_duration": self._estimate_duration(plan_config, len(models)),
-            "estimated_cost": self._estimate_cost(plan_config, models)
-        }
-        
-        return plan_metadata
-    
-    def _estimate_duration(self, config: PlanConfig, num_models: int) -> int:
-        """Estimate evaluation duration in seconds."""
-        # Simple estimation: 1 second per sample per model
-        base_time = config.sample_size * num_models
-        
-        # Add overhead for setup and aggregation
-        overhead = 30 + (num_models * 10)
-        
-        return base_time + overhead
-    
-    def _estimate_cost(self, config: PlanConfig, models: List[ModelInfo]) -> float:
-        """Estimate evaluation cost in USD."""
-        # Simple estimation based on typical API costs
-        # This would need to be more sophisticated in production
-        
-        cost_per_sample = {
-            "gpt-4": 0.03,
-            "gpt-3.5-turbo": 0.002,
-            "claude": 0.01,
-            "default": 0.005
-        }
-        
-        total_cost = 0.0
-        for model in models:
-            model_cost = cost_per_sample.get(
-                model.name.lower(), 
-                cost_per_sample["default"]
-            )
-            total_cost += model_cost * config.sample_size
-        
-        return round(total_cost, 2)
-    
-    def validate_plan(self, plan_yaml: str) -> bool:
-        """Validate generated plan YAML."""
-        try:
-            plan_data = yaml.safe_load(plan_yaml)
-            
-            # Basic validation
-            required_keys = ["version", "metadata", "models", "datasets"]
-            for key in required_keys:
-                if key not in plan_data:
-                    logger.error(f"Missing required key in plan: {key}")
-                    return False
-            
-            # Validate models
-            if not plan_data["models"]:
-                logger.error("No models specified in plan")
-                return False
-            
-            # Validate datasets
-            if not plan_data["datasets"]:
-                logger.error("No datasets specified in plan")
-                return False
-            
-            logger.info("Plan validation successful")
-            return True
-            
-        except yaml.YAMLError as e:
-            logger.error(f"Invalid YAML in plan: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Plan validation error: {e}")
-            return False
 
 
 def create_planner_agent() -> PlannerAgent:

@@ -36,12 +36,14 @@ class AppState(rx.State):
     user_name: str = ""
     user_picture: str = ""
     user_role: str = ""
+    user_id: int = 0
     auth_checked: bool = False
     auth_error: str = ""
     dev_login_value: str = "dev@local"
 
     # -- Navigation -------------------------------------------------------
     current_page: str = "evaluation"
+    sidebar_collapsed: bool = False
 
     # -- Task management --------------------------------------------------
     task_history: List[Dict[str, Any]] = []
@@ -51,10 +53,68 @@ class AppState(rx.State):
     models: List[Dict[str, Any]] = []
     num_models: int = 2
     query: str = ""
-    sample_scale: str = "medium"
     current_results: Optional[Dict[str, Any]] = None
     is_loading: bool = False
     is_submitting: bool = False
+
+    # -- Evaluation wizard step -------------------------------------------
+    # "input"     → initial centered query input screen
+    # "configure" → model / data / cost config tabs shown after query submit
+    # "detail"    → task detail view (clicked from sidebar history)
+    eval_step: str = "input"
+    eval_config_tab: str = "model"  # "model" | "data" | "cost"
+    eval_is_off_topic: bool = False
+    eval_off_topic_message: str = ""
+    selected_task_id: str = ""
+    selected_task_result_rows: list[dict] = []
+    selected_task_error_msg: str = ""
+    selected_task_completed_at: str = ""
+    selected_task_stage: str = ""        # current stage label while running
+    selected_task_stage_pct: int = 0     # 0-100 progress within the stage
+    selected_task_models: List[Dict[str, Any]] = []   # [{name, api_base, model_type}]
+    selected_task_sample_scale: str = "" # e.g. "medium", "custom:300"
+    selected_task_labels: List[str] = [] # benchmark categories / dataset names used
+
+    @rx.var
+    def selected_task_sample_label(self) -> str:
+        """Human-readable label for the selected task's sample scale."""
+        scale = self.selected_task_sample_scale
+        labels = {"small": "Small (50)", "medium": "Medium (100)", "large": "Large (250)", "full": "Full (500)"}
+        if scale in labels:
+            return labels[scale]
+        if scale.startswith("custom:"):
+            n = scale.split(":", 1)[1]
+            return f"Custom ({n})"
+        return scale or "—"
+
+    @rx.var
+    def selected_task_stage_index(self) -> int:
+        """Return 0-4 index of the current pipeline step."""
+        s = self.selected_task_stage.lower()
+        if "initializ" in s:
+            return 0
+        if "validat" in s:
+            return 1
+        if "running" in s or "benchmark" in s:
+            return 2
+        if "mapping" in s or "map" in s:
+            return 3
+        if "storing" in s or "store" in s:
+            return 4
+        return -1
+    sample_scale: str = "medium"  # "small"|"medium"|"large"|"full"|"custom"
+    custom_sample_count: str = ""  # used when sample_scale == "custom"
+
+    # -- Recent models (for Model Name autocomplete) ----------------------
+    recent_model_names: List[str] = []
+
+    # -- Data Review (suggested filters from query) -----------------------
+    eval_suggested_language: str = ""
+    eval_suggested_subject: str = ""
+    eval_suggested_task_type: str = ""
+    eval_data_expanded: bool = False   # whether sample panel is open
+    eval_data_entries: List[Dict[str, Any]] = []
+    eval_data_loading: bool = False
 
     # -- Leaderboard filters ----------------------------------------------
     language_filter: str = "All"
@@ -107,7 +167,264 @@ class AppState(rx.State):
     # =====================================================================
 
     def set_page(self, page: str):
-        self.current_page = page
+        # Redirect "status" to "evaluation" (merged pages)
+        if page == "status":
+            self.current_page = "evaluation"
+        else:
+            self.current_page = page
+
+    def toggle_sidebar(self):
+        self.sidebar_collapsed = not self.sidebar_collapsed
+
+    def new_evaluation(self):
+        """Reset evaluation form and navigate to evaluation page."""
+        self.query = ""
+        self.models = []
+        self.current_task_id = None
+        self.current_results = None
+        self.current_page = "evaluation"
+        self.eval_step = "input"
+        self.eval_config_tab = "model"
+
+    async def submit_query(self):
+        """Validate query via suggest API, then advance to configure step if on-topic."""
+        if not self.query.strip():
+            yield rx.toast.error("Please describe what you want to evaluate.")
+            return
+
+        self.eval_is_off_topic = False
+        self.eval_off_topic_message = ""
+        self.is_submitting = True
+        yield  # immediately send loading state to browser
+
+        is_off_topic = False
+        plan_summary = ""
+        try:
+            async with httpx.AsyncClient(timeout=8) as client:
+                response = await client.post(
+                    f"{self.api_base_url}/api/v1/leaderboard/suggest",
+                    json={"query": self.query},
+                    headers=self._auth_headers(),
+                )
+
+            if response.status_code == 200:
+                data = response.json()
+                metadata = data.get("metadata") or {}
+                is_off_topic = metadata.get("reason") == "off_topic"
+                plan_summary = data.get("plan_summary") or ""
+                # Save suggested filters for Data Review tab
+                self.eval_suggested_language = data.get("language") or ""
+                self.eval_suggested_subject = data.get("subject_type") or ""
+                self.eval_suggested_task_type = data.get("task_type") or ""
+                self.eval_data_expanded = False
+                self.eval_data_entries = []
+        except Exception:
+            pass
+
+        self.is_submitting = False
+
+        if is_off_topic:
+            self.eval_is_off_topic = True
+            self.eval_off_topic_message = plan_summary
+            yield
+            return
+
+        # Create a local pending entry immediately so the sidebar shows it right away.
+        # The real task_id is assigned once Start Evaluation is clicked.
+        pending_id = f"pending-{datetime.now().strftime('%H%M%S%f')}"
+        pending_task = {
+            "id": pending_id,
+            "status": "pending",
+            "progress": 0,
+            "model_name": "configuring...",
+            "query": self.query,
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "estimated_time": "-",
+        }
+        self.task_history = [pending_task] + self.task_history
+        self.current_task_id = pending_id
+        self.eval_step = "configure"
+        self.eval_config_tab = "model"
+        # Load recent models in background for autocomplete
+        yield AppState.load_recent_models
+
+    def set_eval_tab(self, tab: str):
+        self.eval_config_tab = tab
+
+    def set_eval_step(self, step: str):
+        self.eval_step = step
+
+    def set_sample_scale(self, value: str):
+        if value in ("small", "medium", "large", "full"):
+            self.sample_scale = value
+            self.custom_sample_count = ""
+
+    def set_custom_sample_count(self, value: str):
+        """Accept only numeric input; switch scale to custom."""
+        digits = "".join(c for c in value if c.isdigit())
+        self.custom_sample_count = digits
+        if digits:
+            self.sample_scale = "custom"
+
+    async def load_recent_models(self):
+        """Fetch recently used model names from backend."""
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                response = await client.get(
+                    f"{self.api_base_url}/api/v1/dataset/models/recent",
+                    headers=self._auth_headers(),
+                )
+            if response.status_code == 200:
+                self.recent_model_names = response.json().get("models") or []
+        except Exception:
+            pass
+
+    async def load_data_review_samples(self):
+        """Toggle the Data Review sample panel — fetch samples for the full suggested combo."""
+        if self.eval_data_expanded:
+            self.eval_data_expanded = False
+            self.eval_data_entries = []
+            return
+
+        self.eval_data_expanded = True
+        self.eval_data_loading = True
+        self.eval_data_entries = []
+        yield
+
+        params: dict = {"limit": 5}
+        if self.eval_suggested_language:
+            params["language"] = self.eval_suggested_language
+        if self.eval_suggested_subject:
+            params["subject_type"] = self.eval_suggested_subject
+        if self.eval_suggested_task_type:
+            params["task_type"] = self.eval_suggested_task_type
+
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(
+                    f"{self.api_base_url}/api/v1/dataset/sample",
+                    params=params,
+                    headers=self._auth_headers(),
+                )
+            if response.status_code == 200:
+                data = response.json()
+                samples = data.get("samples") or []
+                self.eval_data_entries = [
+                    {
+                        "benchmark_name": s.get("benchmark_name", ""),
+                        "subject_type": s.get("subject_type", ""),
+                        "task_type": s.get("task_type", ""),
+                        "problem_type": s.get("problem_type", ""),
+                        "prompt": s.get("prompt", "")[:300],
+                        "options": s.get("options", ""),
+                        "answer_str": s.get("answer_str", ""),
+                    }
+                    for s in (samples[:5] if isinstance(samples, list) else [])
+                ]
+        except Exception:
+            self.eval_data_entries = []
+        finally:
+            self.eval_data_loading = False
+
+    def back_to_query(self):
+        """Go back to the input step, removing the local pending placeholder."""
+        self.task_history = [
+            t for t in self.task_history
+            if not (t.get("id", "").startswith("pending-") and t.get("query") == self.query)
+        ]
+        self.current_task_id = None
+        self.eval_step = "input"
+
+    async def remove_task_from_history(self, task_id: str):
+        """Delete a task from the backend and remove it from the sidebar."""
+        # Remove locally first for instant UI response
+        self.task_history = [t for t in self.task_history if t.get("id") != task_id]
+        if self.selected_task_id == task_id:
+            self.selected_task_id = ""
+            self.eval_step = "input"
+        # Skip pending placeholders (no backend entry yet)
+        if task_id.startswith("pending-"):
+            return
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                await client.delete(
+                    f"{self.api_base_url}/api/v1/tasks/{task_id}/hard",
+                    headers=self._auth_headers(),
+                )
+        except Exception:
+            pass
+
+    def clear_suggested_combo(self):
+        """Remove the suggested category combo from Data Review."""
+        self.eval_suggested_language = ""
+        self.eval_suggested_subject = ""
+        self.eval_suggested_task_type = ""
+        self.eval_data_expanded = False
+        self.eval_data_entries = []
+
+    async def select_task(self, task_id: str):
+        """Open detail view for a task from the sidebar history."""
+        self.selected_task_id = task_id
+        self.selected_task_result_rows = []
+        self.selected_task_error_msg = ""
+        self.selected_task_completed_at = ""
+        self.selected_task_stage = ""
+        self.selected_task_stage_pct = 0
+        self.selected_task_models = []
+        self.selected_task_sample_scale = ""
+        self.selected_task_labels = []
+        self.current_page = "evaluation"
+        self.eval_step = "detail"
+        # Fetch latest status & result from backend
+        await self.refresh_task_status(task_id)
+
+    async def cancel_selected_task(self):
+        """Cancel the currently selected task via the API."""
+        if not self.selected_task_id or self.selected_task_id.startswith("pending-"):
+            # Local pending entry — just remove it
+            self.task_history = [
+                t for t in self.task_history
+                if t.get("id") != self.selected_task_id
+            ]
+            self.selected_task_id = ""
+            self.eval_step = "input"
+            return rx.toast.info("Pending evaluation cancelled.")
+
+        try:
+            async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                response = await client.delete(
+                    f"{self.api_base_url}/api/v1/tasks/{self.selected_task_id}",
+                    headers=self._auth_headers(),
+                )
+            if response.status_code == 200:
+                for i, t in enumerate(self.task_history):
+                    if t.get("id") == self.selected_task_id:
+                        self.task_history[i] = {**t, "status": "cancelled"}
+                        break
+                return rx.toast.success("Evaluation cancelled.")
+            else:
+                return rx.toast.error("Failed to cancel evaluation.")
+        except Exception as e:
+            return rx.toast.error(f"Error: {str(e)}")
+
+    def rerun_task(self, task_id: str):
+        """Pre-fill query from a past task and go to the configure step."""
+        for t in self.task_history:
+            if t.get("id") == task_id:
+                self.query = t.get("query", "")
+                break
+        self.models = []
+        self.selected_task_id = ""
+        self.eval_step = "input"
+        self.current_page = "evaluation"
+
+    @rx.var
+    def selected_task(self) -> dict:
+        """Return the currently selected task dict, or empty dict."""
+        for t in self.task_history:
+            if t.get("id") == self.selected_task_id:
+                return t
+        return {}
 
     def set_language_filter(self, value: str):
         self.language_filter = value
@@ -135,9 +452,9 @@ class AppState(rx.State):
 
     def set_query(self, value: str):
         self.query = value
-
-    def set_sample_scale(self, value: str):
-        self.sample_scale = value
+        if self.eval_is_off_topic:
+            self.eval_is_off_topic = False
+            self.eval_off_topic_message = ""
 
     # =====================================================================
     # Computed properties
@@ -245,6 +562,9 @@ class AppState(rx.State):
 
     async def initialize_auth(self):
         """Read token from URL query and fetch current user info."""
+        # Reset transient UI states on page load to avoid stale spinner states
+        self.is_submitting = False
+
         try:
             params = self.router.page.params or {}
         except Exception:
@@ -280,8 +600,9 @@ class AppState(rx.State):
                 self.is_authenticated = True
                 self.user_email = data.get("email", "")
                 self.user_name = data.get("name", "")
-                self.user_picture = data.get("picture", "")
+                self.user_picture = data.get("picture") or ""
                 self.user_role = data.get("role") or ""
+                self.user_id = int(data.get("id") or 0)
                 self.auth_error = ""
                 await self._load_tasks_from_backend()
             else:
@@ -378,8 +699,12 @@ class AppState(rx.State):
 
         self.is_submitting = True
         try:
+            actual_scale = self.sample_scale
+            if self.sample_scale == "custom" and self.custom_sample_count:
+                actual_scale = f"custom:{self.custom_sample_count}"
             payload = {
                 "query": self.query,
+                "sample_scale": actual_scale,
                 "models": [
                     {
                         "name": m["name"],
@@ -389,7 +714,9 @@ class AppState(rx.State):
                     }
                     for m in self.models
                 ],
-                "sample_scale": self.sample_scale,
+                "category_language": self.eval_suggested_language or None,
+                "category_subject": self.eval_suggested_subject or None,
+                "category_task_type": self.eval_suggested_task_type or None,
             }
 
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
@@ -409,7 +736,7 @@ class AppState(rx.State):
                         return rx.toast.error("Failed to start evaluation: missing task ID")
                     normalized_status = self._normalize_task_status(result.get("status"))
 
-                    new_task = {
+                    real_task = {
                         "id": task_id,
                         "status": normalized_status,
                         "progress": 100 if normalized_status == "completed" else 0,
@@ -419,9 +746,36 @@ class AppState(rx.State):
                         "estimated_time": result.get("estimated_duration", "Unknown"),
                     }
 
-                    self.task_history = [new_task] + self.task_history
+                    # Replace the local pending placeholder with the real task entry.
+                    replaced = False
+                    new_history = []
+                    for t in self.task_history:
+                        if not replaced and t.get("id", "").startswith("pending-") and t.get("query") == self.query:
+                            new_history.append(real_task)
+                            replaced = True
+                        else:
+                            new_history.append(t)
+                    if not replaced:
+                        new_history = [real_task] + new_history
+                    self.task_history = new_history
+
                     self.current_task_id = task_id
-                    self.current_page = "status"
+                    self.current_page = "evaluation"
+                    self.eval_step = "input"  # reset to input for next evaluation
+                    # Pre-populate selected task detail state
+                    self.selected_task_id = task_id
+                    self.selected_task_models = [
+                        {"name": m["name"], "api_base": m.get("api_base", ""), "model_type": m.get("model_type", "")}
+                        for m in self.models
+                    ]
+                    self.selected_task_sample_scale = actual_scale
+                    self.selected_task_labels = [
+                        c for c in [
+                            self.eval_suggested_language,
+                            self.eval_suggested_subject,
+                            self.eval_suggested_task_type,
+                        ] if c
+                    ]
 
                     toast_message = (
                         f"Evaluation completed! Task ID: {task_id}"
@@ -461,15 +815,73 @@ class AppState(rx.State):
                     task_data = response.json()
                     normalized_status = self._normalize_task_status(task_data.get("status"))
 
+                    # Extract result fields
+                    result = task_data.get("result") or {}
+                    model_results = result.get("model_results") or []
+                    storage_stats = result.get("storage_stats") or {}
+                    result_rows = []
+                    for mr in model_results:
+                        acc = mr.get("accuracy")
+                        result_rows.append({
+                            "model_name": mr.get("model_name", ""),
+                            "accuracy": f"{acc:.1%}" if isinstance(acc, float) else "-",
+                            "samples": str(storage_stats.get("samples_stored", mr.get("total_samples", "-"))),
+                            "exec_time": f"{mr.get('execution_time', 0):.0f}s" if mr.get("execution_time") else "-",
+                        })
+                    storage_errors = storage_stats.get("errors") or []
+
+                    # Parse request_payload for model configs, sample scale, category labels
+                    rp = task_data.get("request_payload") or {}
+                    if task_id == self.selected_task_id and rp:
+                        rp_models = rp.get("models") or []
+                        self.selected_task_models = [
+                            {
+                                "name": m.get("name", ""),
+                                "api_base": m.get("api_base", ""),
+                                "model_type": m.get("model_type", ""),
+                            }
+                            for m in rp_models
+                        ]
+                        self.selected_task_sample_scale = rp.get("sample_scale", "")
+                        # Build category labels from the three suggest fields
+                        cats = [
+                            rp.get("category_language") or "",
+                            rp.get("category_subject") or "",
+                            rp.get("category_task_type") or "",
+                        ]
+                        self.selected_task_labels = [c for c in cats if c]
+
+                    # Stage info from Celery PROGRESS meta
+                    stage_label = task_data.get("stage", "")
+                    stage_current = int(task_data.get("stage_current", 0))
+                    stage_total = int(task_data.get("stage_total", 1) or 1)
+                    stage_pct = int(stage_current / stage_total * 100) if stage_total else 0
+
+                    # Store result details in dedicated state vars (for the selected task)
+                    if task_id == self.selected_task_id:
+                        self.selected_task_result_rows = result_rows
+                        self.selected_task_error_msg = task_data.get("error_message") or ""
+                        self.selected_task_completed_at = str(task_data.get("completed_at", "") or "")[:19].replace("T", " ")
+                        if stage_label:
+                            self.selected_task_stage = stage_label
+                            self.selected_task_stage_pct = stage_pct
+                        elif normalized_status == "completed":
+                            self.selected_task_stage = "Evaluation complete"
+                            self.selected_task_stage_pct = 100
+                        elif normalized_status == "failed":
+                            self.selected_task_stage = "Evaluation failed"
+                            self.selected_task_stage_pct = 0
+
                     for i, task in enumerate(self.task_history):
                         if task["id"] == task_id:
-                            progress = task.get("progress", 0)
                             if normalized_status == "completed":
                                 progress = 100
                             elif normalized_status == "pending":
-                                progress = 0
-                            elif normalized_status == "running" and progress == 0:
-                                progress = 50
+                                progress = 5
+                            elif normalized_status == "running":
+                                progress = max(10, stage_pct) if stage_pct else max(10, task.get("progress", 10))
+                            else:
+                                progress = task.get("progress", 0)
 
                             self.task_history[i].update(
                                 {
@@ -497,9 +909,12 @@ class AppState(rx.State):
         """Load task history from backend API."""
         try:
             async with httpx.AsyncClient(timeout=API_TIMEOUT) as client:
+                params: dict = {"page_size": 10}
+                if self.user_id:
+                    params["user_id"] = self.user_id
                 response = await client.get(
                     f"{self.api_base_url}/api/v1/tasks",
-                    params={"page_size": 50},
+                    params=params,
                     headers=self._auth_headers(),
                 )
             if response.status_code == 200:
@@ -511,7 +926,11 @@ class AppState(rx.State):
                         "status": self._normalize_task_status(t.get("status")),
                         "progress": 100 if self._normalize_task_status(t.get("status")) == "completed" else 0,
                         "model_name": f"{t.get('model_count', 0)} model(s)",
-                        "query": ", ".join(t.get("policy_tags", [])) or "Evaluation task",
+                        "query": (
+                            t.get("query")
+                            or ", ".join(t.get("policy_tags", []))
+                            or "Evaluation task"
+                        ),
                         "created_at": str(t.get("created_at", ""))[:19].replace("T", " "),
                         "estimated_time": "-",
                     }
