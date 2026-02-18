@@ -97,9 +97,30 @@ class HRETRunner:
                 if "seed" in dataset_config:
                     dataset_params["seed"] = dataset_config["seed"]
                 
-                # Add base_prompt_template for MCQA
+                # Map plan filters → HRET dataset_params (plural form)
                 filters = dataset_config.get("filters", {})
                 problem_type = filters.get("problem_type") or metadata.get("problem_type", "")
+                task_type = filters.get("task_type") or metadata.get("task_type")
+                subject_type = filters.get("subject_type") or metadata.get("subject_type")
+                target_type = filters.get("target_type") or metadata.get("target_type")
+
+                if problem_type:
+                    dataset_params["problem_types"] = (
+                        problem_type if isinstance(problem_type, list) else [problem_type]
+                    )
+                if task_type:
+                    dataset_params["task_types"] = (
+                        task_type if isinstance(task_type, list) else [task_type]
+                    )
+                if subject_type:
+                    dataset_params["subject_types"] = (
+                        subject_type if isinstance(subject_type, list) else [subject_type]
+                    )
+                if target_type:
+                    dataset_params["target_types"] = (
+                        target_type if isinstance(target_type, list) else [target_type]
+                    )
+
                 if problem_type == "MCQA":
                     dataset_params["base_prompt_template"] = (
                         "{query}\n\n"

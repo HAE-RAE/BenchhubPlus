@@ -7,7 +7,7 @@ from ..state import AppState
 def nav_item(
     label: str, icon_name: str, page: str, disabled: bool = False
 ) -> rx.Component:
-    """Single navigation tab item."""
+    """Single navigation tab item (horizontal)."""
     is_active = AppState.current_page == page
     return rx.box(
         rx.hstack(
@@ -29,6 +29,48 @@ def nav_item(
             {"background": "var(--gray-3)"},
         ),
         transition="all 0.15s ease",
+    )
+
+
+def sidebar_nav_item(
+    label: str, icon_name: str, page: str, disabled: bool = False
+) -> rx.Component:
+    """Vertical sidebar nav item — expands/collapses with sidebar."""
+    is_active = AppState.current_page == page
+    return rx.tooltip(
+        rx.box(
+            rx.hstack(
+                rx.icon(icon_name, size=18),
+                rx.cond(
+                    AppState.sidebar_collapsed,
+                    rx.fragment(),
+                    rx.text(label, size="2", weight="medium"),
+                ),
+                spacing="3",
+                align="center",
+            ),
+            on_click=lambda: AppState.set_page(page),
+            padding=rx.cond(AppState.sidebar_collapsed, "10px", "10px 16px"),
+            border_radius="var(--radius-3)",
+            cursor=rx.cond(disabled, "not-allowed", "pointer"),
+            opacity=rx.cond(disabled, "0.4", "1"),
+            width="100%",
+            background=rx.cond(is_active, "var(--accent-4)", "transparent"),
+            color=rx.cond(is_active, "var(--accent-11)", "var(--gray-11)"),
+            border_left=rx.cond(
+                is_active,
+                "3px solid var(--accent-9)",
+                "3px solid transparent",
+            ),
+            _hover=rx.cond(
+                is_active,
+                {"background": "var(--accent-5)"},
+                {"background": "var(--gray-3)"},
+            ),
+            transition="all 0.2s ease",
+        ),
+        content=rx.cond(AppState.sidebar_collapsed, label, ""),
+        side="right",
     )
 
 

@@ -209,79 +209,160 @@ def _ai_search_section() -> rx.Component:
 # Manual filter section
 # =========================================================================
 
-def _manual_filter_section() -> rx.Component:
-    return rx.card(
+def _filter_select(label: str, options, value, on_change) -> rx.Component:
+    """Compact labeled filter select."""
+    is_active = value != "All"
+    return rx.box(
         rx.vstack(
-            rx.hstack(
-                rx.icon("sliders_horizontal", size=18, color="gray"),
-                rx.heading("Manual Filters", size="4"),
-                align="center",
-                spacing="2",
+            rx.text(
+                label,
+                size="1",
+                weight="medium",
+                color=rx.cond(is_active, "var(--accent-11)", "var(--gray-10)"),
+                letter_spacing="0.05em",
+                text_transform="uppercase",
             ),
-            rx.grid(
-                rx.vstack(
-                    rx.text("Language", weight="bold", size="2"),
-                    rx.select(
-                        AppState.leaderboard_language_options,
-                        value=AppState.language_filter,
-                        on_change=AppState.set_language_filter,
-                        width="100%",
-                    ),
-                    align="start",
-                    width="100%",
-                ),
-                rx.vstack(
-                    rx.text("Subject", weight="bold", size="2"),
-                    rx.select(
-                        AppState.leaderboard_subject_options,
-                        value=AppState.subject_filter,
-                        on_change=AppState.set_subject_filter,
-                        width="100%",
-                    ),
-                    align="start",
-                    width="100%",
-                ),
-                rx.vstack(
-                    rx.text("Task Type", weight="bold", size="2"),
-                    rx.select(
-                        AppState.leaderboard_task_type_options,
-                        value=AppState.task_type_filter,
-                        on_change=AppState.set_task_type_filter,
-                        width="100%",
-                    ),
-                    align="start",
-                    width="100%",
-                ),
-                rx.vstack(
-                    rx.text("Max Results", weight="bold", size="2"),
-                    rx.input(
-                        value=AppState.max_results,
-                        on_change=AppState.set_max_results,
-                        type="number",
-                        step=10,
-                        width="100%",
-                    ),
-                    align="start",
-                    width="100%",
-                ),
-                columns="4",
-                spacing="4",
+            rx.select(
+                options,
+                value=value,
+                on_change=on_change,
+                size="2",
                 width="100%",
+                variant=rx.cond(is_active, "soft", "surface"),
+                color_scheme=rx.cond(is_active, "indigo", "gray"),
             ),
-            rx.center(
-                rx.button(
-                    "Apply Filters",
-                    size="3",
-                    variant="outline",
-                    on_click=AppState.load_leaderboard_data,
-                    loading=AppState.leaderboard_loading,
-                ),
-                width="100%",
-            ),
+            spacing="1",
             align="start",
+            width="100%",
+        ),
+        flex="1",
+        min_width="120px",
+    )
+
+
+def _manual_filter_section() -> rx.Component:
+    active_count = (
+        rx.cond(AppState.language_filter != "All", 1, 0)
+        + rx.cond(AppState.subject_filter != "All", 1, 0)
+        + rx.cond(AppState.task_type_filter != "All", 1, 0)
+    )
+    return rx.box(
+        rx.vstack(
+            # Header row
+            rx.hstack(
+                rx.hstack(
+                    rx.icon("sliders_horizontal", size=15, color="var(--gray-9)"),
+                    rx.text("Filters", size="2", weight="medium", color="var(--gray-11)"),
+                    rx.cond(
+                        active_count > 0,
+                        rx.badge(
+                            active_count,
+                            color_scheme="indigo",
+                            variant="solid",
+                            size="1",
+                            radius="full",
+                        ),
+                        rx.fragment(),
+                    ),
+                    spacing="2",
+                    align="center",
+                ),
+                rx.spacer(),
+                rx.cond(
+                    active_count > 0,
+                    rx.button(
+                        rx.icon("x", size=12),
+                        "Reset",
+                        size="1",
+                        variant="ghost",
+                        color_scheme="gray",
+                        on_click=[
+                            AppState.set_language_filter("All"),
+                            AppState.set_subject_filter("All"),
+                            AppState.set_task_type_filter("All"),
+                        ],
+                        cursor="pointer",
+                    ),
+                    rx.fragment(),
+                ),
+                width="100%",
+                align="center",
+            ),
+            # Filter row
+            rx.flex(
+                _filter_select(
+                    "Language",
+                    AppState.leaderboard_language_options,
+                    AppState.language_filter,
+                    AppState.set_language_filter,
+                ),
+                _filter_select(
+                    "Subject",
+                    AppState.leaderboard_subject_options,
+                    AppState.subject_filter,
+                    AppState.set_subject_filter,
+                ),
+                _filter_select(
+                    "Task Type",
+                    AppState.leaderboard_task_type_options,
+                    AppState.task_type_filter,
+                    AppState.set_task_type_filter,
+                ),
+                # Max results compact
+                rx.box(
+                    rx.vstack(
+                        rx.text(
+                            "Max",
+                            size="1",
+                            weight="medium",
+                            color="var(--gray-10)",
+                            letter_spacing="0.05em",
+                            text_transform="uppercase",
+                        ),
+                        rx.input(
+                            value=AppState.max_results,
+                            on_change=AppState.set_max_results,
+                            type="number",
+                            step=10,
+                            size="2",
+                            width="80px",
+                        ),
+                        spacing="1",
+                        align="start",
+                    ),
+                    flex_shrink="0",
+                ),
+                # Load button
+                rx.box(
+                    rx.vstack(
+                        rx.text(" ", size="1"),
+                        rx.button(
+                            rx.icon("search", size=14),
+                            "Load",
+                            size="2",
+                            color_scheme="indigo",
+                            variant="solid",
+                            on_click=AppState.load_leaderboard_data,
+                            loading=AppState.leaderboard_loading,
+                            cursor="pointer",
+                        ),
+                        spacing="1",
+                        align="start",
+                    ),
+                    flex_shrink="0",
+                ),
+                gap="3",
+                wrap="wrap",
+                align="end",
+                width="100%",
+            ),
             spacing="3",
             width="100%",
         ),
+        padding="1rem 1.25rem",
+        border_radius="var(--radius-4)",
+        background="var(--gray-2)",
+        border="1px solid var(--gray-4)",
         width="100%",
     )
 

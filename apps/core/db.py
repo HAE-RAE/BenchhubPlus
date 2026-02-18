@@ -288,6 +288,27 @@ class ModelCredential(Base):
         )
 
 
+class BenchmarkSample(Base):
+    """Sample benchmark questions for Data Review preview."""
+
+    __tablename__ = "benchmark_samples"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    language = Column(String(50), nullable=False, index=True)
+    subject_type = Column(String(100), nullable=False, index=True)
+    task_type = Column(String(100), nullable=False, index=True)
+    problem_type = Column(String(50), nullable=True)
+    benchmark_name = Column(String(200), nullable=True)
+    prompt = Column(Text, nullable=False)
+    options = Column(Text, nullable=True)   # JSON string
+    answer_str = Column(String(500), nullable=True)
+
+    __table_args__ = (
+        Index("idx_bench_samples_lang_subj", "language", "subject_type"),
+        Index("idx_bench_samples_task", "task_type"),
+    )
+
+
 class AuditLog(Base):
     """Audit trail for administrative actions."""
 
@@ -324,9 +345,116 @@ def get_db():
         db.close()
 
 
+def _migrate_users_org_workspace_columns() -> None:
+    """Add default_org_id and default_workspace_id to users if missing (migration)."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        for col, ref in [
+            ("default_org_id", "organizations(id)"),
+            ("default_workspace_id", "workspaces(id)"),
+        ]:
+            try:
+                conn.execute(text(
+                    f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} INTEGER REFERENCES {ref}"
+                ))
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                if "already exists" not in str(e).lower() and "duplicate" not in str(e).lower():
+                    raise
+
+
+def _migrate_evaluation_tasks_columns() -> None:
+    """Add missing columns to evaluation_tasks if they don't exist."""
+    from sqlalchemy import text
+    simple_cols = [
+        ("user_id",         "INTEGER REFERENCES users(id)"),
+        ("error_log",       "TEXT"),
+        ("policy_tags",     "TEXT"),
+        ("model_count",     "INTEGER"),
+        ("request_payload", "TEXT"),
+        ("updated_at",      "TIMESTAMPTZ DEFAULT NOW()"),
+    ]
+    with engine.connect() as conn:
+        for col, col_def in simple_cols:
+            try:
+                conn.execute(text(
+                    f"ALTER TABLE evaluation_tasks ADD COLUMN IF NOT EXISTS {col} {col_def}"
+                ))
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                if "already exists" not in str(e).lower() and "duplicate" not in str(e).lower():
+                    raise
+        # Ensure CHECK constraint exists (safe to ignore if already present)
+        try:
+            conn.execute(text(
+                "ALTER TABLE evaluation_tasks ADD CONSTRAINT check_status_values "
+                "CHECK (status IN ('PENDING','STARTED','SUCCESS','FAILURE','CANCELLED','HOLD'))"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+
+def _migrate_leaderboard_cache_columns() -> None:
+    """Ensure leaderboard_cache has id PK and all required columns."""
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        # Add missing columns
+        for col, col_def in [
+            ("quarantined", "BOOLEAN NOT NULL DEFAULT FALSE"),
+            ("deleted_at",  "TIMESTAMPTZ"),
+            ("created_at",  "TIMESTAMPTZ NOT NULL DEFAULT NOW()"),
+        ]:
+            try:
+                conn.execute(text(
+                    f"ALTER TABLE leaderboard_cache ADD COLUMN IF NOT EXISTS {col} {col_def}"
+                ))
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                if "already exists" not in str(e).lower() and "duplicate" not in str(e).lower():
+                    raise
+
+        # Add id column and promote to primary key if not already done
+        try:
+            conn.execute(text(
+                "ALTER TABLE leaderboard_cache ADD COLUMN IF NOT EXISTS id SERIAL"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        try:
+            conn.execute(text(
+                "ALTER TABLE leaderboard_cache DROP CONSTRAINT IF EXISTS leaderboard_cache_pkey"
+            ))
+            conn.execute(text(
+                "ALTER TABLE leaderboard_cache ADD PRIMARY KEY (id)"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+        # Unique constraint
+        try:
+            conn.execute(text(
+                "ALTER TABLE leaderboard_cache ADD CONSTRAINT uq_leaderboard_cache_entry "
+                "UNIQUE (model_name, language, subject_type, task_type)"
+            ))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
+
 def init_db() -> None:
     """Initialize database with tables."""
     create_tables()
+    if not settings.is_sqlite:
+        _migrate_users_org_workspace_columns()
+        _migrate_evaluation_tasks_columns()
+        _migrate_leaderboard_cache_columns()
     print("Database initialized successfully!")
 
 

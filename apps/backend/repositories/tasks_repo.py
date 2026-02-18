@@ -183,6 +183,15 @@ class TasksRepository:
         
         return result
     
+    def delete_task(self, task_id: str) -> bool:
+        """Hard-delete a task from the database."""
+        task = self.get_task(task_id)
+        if task:
+            self.db.delete(task)
+            self.db.commit()
+            return True
+        return False
+
     def cancel_task(self, task_id: str) -> bool:
         """Cancel a pending task."""
         task = self.get_task(task_id)

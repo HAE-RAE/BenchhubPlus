@@ -149,34 +149,35 @@ def run_hret_evaluation(
             task.status = "STARTED"
             db.commit()
         
-        # Update progress
-        current_task.update_state(
-            state="PROGRESS",
-            meta={"current": 0, "total": len(models), "status": "Initializing HRET runner"}
-        )
-        
+        n_models = len(models)
+        # Steps: init(0), validate(1), run_per_model(2..n+1), process(n+2), store(n+3)
+        total_steps = n_models + 4
+
+        def _progress(step: int, status_msg: str) -> None:
+            current_task.update_state(
+                state="PROGRESS",
+                meta={"current": step, "total": total_steps, "status": status_msg},
+            )
+
+        _progress(0, "Initializing evaluation runner")
+
         # Create HRET runner
         hret_runner = create_hret_runner()
-        
+
+        _progress(1, "Validating evaluation plan")
+
         # Validate plan
         if not hret_runner.validate_plan(plan_yaml):
             raise ValueError("Invalid HRET plan configuration")
-        
-        # Update progress
-        current_task.update_state(
-            state="PROGRESS",
-            meta={"current": 1, "total": len(models), "status": "Running HRET evaluation"}
-        )
-        
+
+        model_names = [m.get("name", f"Model {i+1}") for i, m in enumerate(models)]
+        _progress(2, f"Running benchmark — {', '.join(model_names)}")
+
         # Run HRET evaluation
         timeout_seconds = timeout_minutes * 60
         results, raw_results = hret_runner.run_evaluation(plan_yaml, models, timeout_seconds)
-        
-        # Update progress
-        current_task.update_state(
-            state="PROGRESS",
-            meta={"current": len(models), "total": len(models), "status": "Processing and storing results"}
-        )
+
+        _progress(n_models + 2, "Mapping evaluation results")
         
         storage_stats = None
         if store_results:
@@ -202,6 +203,7 @@ def run_hret_evaluation(
                     )
 
             if mapped_model_results or mapped_sample_results:
+                _progress(n_models + 3, "Storing results to database")
                 storage_manager = HRETStorageManager()
                 storage_stats = storage_manager.store_evaluation_results(
                     model_results=mapped_model_results,

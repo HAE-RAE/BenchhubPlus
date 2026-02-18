@@ -109,13 +109,18 @@ services:
       - "8002:8002"
     depends_on:
       - backend
+    # .web (node_modules/bun symlinks) uses named volume to avoid NFS issues.
+    # Python source is bind-mounted to /app/reflex_frontend (matches COPY destination in Dockerfile).
+    # This enables Reflex hot-reload: file save → instant reload, no image rebuild needed.
     volumes:
-      - ./apps/reflex_frontend:/app
+      - reflex_dev_web:/app/.web
+      - ./apps/reflex_frontend/reflex_frontend:/app/reflex_frontend
     command: ["reflex", "run", "--env", "dev", "--backend-host", "0.0.0.0", "--backend-port", "8002", "--frontend-port", "3000", "--loglevel", "debug"]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
+      start_period: 120s
       retries: 5
 
   # Celery Flower (Development)
@@ -136,6 +141,8 @@ volumes:
   redis_dev_data:
     driver: local
   hf_cache:
+    driver: local
+  reflex_dev_web:
     driver: local
 
 networks:
