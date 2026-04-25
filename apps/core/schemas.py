@@ -31,6 +31,10 @@ SAMPLE_SCALE_OPTIONS = {
     "full": {"label": "Full (500)", "sample_size": 500},
 }
 
+# Hard upper bound for custom:N sample requests. Prevents authenticated users
+# from queuing prohibitively expensive evaluations.
+SAMPLE_SIZE_HARD_CAP = 1000
+
 
 def resolve_sample_size(scale: str) -> int:
     """Return the integer sample count for a given scale string."""
@@ -40,7 +44,7 @@ def resolve_sample_size(scale: str) -> int:
     if scale.startswith("custom:"):
         try:
             n = int(scale.split(":", 1)[1])
-            return max(1, min(n, 10000))
+            return max(1, min(n, SAMPLE_SIZE_HARD_CAP))
         except ValueError:
             pass
     return 100  # fallback
@@ -66,10 +70,17 @@ class LeaderboardQuery(BaseModel):
             return v
         if v.startswith("custom:"):
             try:
-                int(v.split(":", 1)[1])
-                return v
+                n = int(v.split(":", 1)[1])
             except ValueError:
                 pass
+            else:
+                if n < 1:
+                    raise ValueError("custom sample size must be >= 1")
+                if n > SAMPLE_SIZE_HARD_CAP:
+                    raise ValueError(
+                        f"custom sample size must be <= {SAMPLE_SIZE_HARD_CAP}"
+                    )
+                return v
         raise ValueError(f"sample_scale must be one of {list(SAMPLE_SCALE_OPTIONS.keys())} or 'custom:N'")
 
     @property

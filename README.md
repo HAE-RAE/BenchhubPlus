@@ -5,7 +5,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
 
-An interactive leaderboard system for dynamic LLM evaluation that converts natural language queries to customized model rankings using FastAPI backend, modern Reflex frontend, Celery workers, and HRET integration.
+An interactive leaderboard system for dynamic LLM evaluation that converts natural language queries to customized model rankings using FastAPI backend, a production-ready Next.js frontend, Celery workers, and HRET integration.
 
 <img width="1919" height="962" alt="benchhubplus" src="https://github.com/user-attachments/assets/0628747f-0939-4090-b5f3-ebb43c8c25a7" />
 
@@ -36,19 +36,19 @@ An interactive leaderboard system for dynamic LLM evaluation that converts natur
 - **Health Monitoring**: Built-in health checks and monitoring
 - **Scalable Design**: Ready for production workloads
 
-## ✨ What's New: Reflex Frontend
+## ✨ What's New: Next.js Frontend
 
-We've migrated fully from Streamlit to **Reflex** for a modern, production-ready web experience! 
+We've migrated the frontend from Reflex to **Next.js** for a Vercel-ready, SaaS-grade web experience.
 
-### 🆕 Reflex Benefits
-- **Modern UI/UX**: Clean, responsive design with Tailwind CSS
-- **Better Performance**: Optimized rendering and state management  
-- **Production Ready**: Built for scalability and deployment
-- **Component Architecture**: Maintainable and extensible codebase
+### 🆕 Next.js Benefits
+- **Vercel-ready deployment**: The frontend lives in `apps/web` and builds as a standalone Next.js app
+- **Operational SaaS UI**: Evaluation workflow, leaderboard browsing, and manager controls are rebuilt as a cohesive product surface
+- **Typed API client**: Frontend API calls are centralized and typed against the existing FastAPI contract
+- **Responsive application shell**: Desktop sidebar workflow and mobile navigation are handled in the same app
 
 ### 🔄 Migration Status
-- ✅ **Reflex Frontend**: Default experience shipped in this repository
-- 🗑️ **Streamlit Frontend**: Removed in favor of Reflex
+- ✅ **Next.js Frontend**: Default experience shipped in this repository
+- 📦 **Reflex Frontend**: Kept under `apps/reflex_frontend` as legacy reference code
 
 ## 🚀 Quick Start
 
@@ -83,7 +83,7 @@ We've migrated fully from Streamlit to **Reflex** for a modern, production-ready
    The helper script builds the images, starts the services, and waits for them to report healthy.
 
 5. **Open the application**
-   - Frontend UI (Reflex): http://localhost:3000
+   - Frontend UI (Next.js): http://localhost:3000
    - Backend API: http://localhost:8001 (dev) or http://localhost:8000 (prod)
    - API documentation: http://localhost:8001/docs (dev) or http://localhost:8000/docs (prod)
    - Flower (Celery dashboard): http://localhost:5556 (dev) or http://localhost:5555 (prod)
@@ -109,9 +109,10 @@ For contributors who prefer not to use Docker:
 source venv/bin/activate
 python -m uvicorn apps.backend.main:app --host 0.0.0.0 --port 8000 --reload
 
-# Reflex frontend
-cd apps/reflex_frontend
-API_BASE_URL=http://localhost:8000 reflex run --env dev --backend-host 0.0.0.0 --backend-port 8001 --frontend-host 0.0.0.0 --frontend-port 3000
+# Next.js frontend
+cd apps/web
+npm install
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 npm run dev
 
 # Background worker
 celery -A apps.worker.celery_app worker --loglevel=info
@@ -171,7 +172,7 @@ You will also need local PostgreSQL and Redis instances that match the connectio
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│     Reflex      │    │   FastAPI       │    │   Celery        │
+│     Next.js     │    │   FastAPI       │    │   Celery        │
 │   Frontend      │◄──►│   Backend       │◄──►│   Workers       │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
          │                       │                       │
@@ -217,7 +218,7 @@ Documentation is available in both **English** (`docs/eng`) and **한국어** (`
 - **Pydantic**: Data validation and serialization
 
 ### Frontend
-- **Reflex**: Modern Python web framework
+- **Next.js**: React application framework for SaaS UI and Vercel deployment
 - **Plotly**: Interactive data visualizations
 - **Pandas**: Data manipulation and analysis
 

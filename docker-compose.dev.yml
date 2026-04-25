@@ -95,29 +95,25 @@ services:
       - hf_cache:/app/.cache/huggingface
     command: ["python", "-m", "celery", "-A", "apps.worker.celery_app", "worker", "--loglevel=debug", "--concurrency=1", "--queues", "evaluation,maintenance"]
 
-  # Reflex Frontend (Development)
-  reflex:
+  # Next.js Frontend (Development)
+  web:
     build:
       context: .
-      dockerfile: Dockerfile.reflex
-    container_name: benchhub_reflex_dev
+      dockerfile: Dockerfile.web
+    container_name: benchhub_web_dev
     environment:
-      - API_BASE_URL=http://backend:8000
-      - DEV_AUTH_BYPASS=true
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8001
     ports:
       - "3000:3000"
-      - "8002:8002"
     depends_on:
       - backend
-    # .web (node_modules/bun symlinks) uses named volume to avoid NFS issues.
-    # Python source is bind-mounted to /app/reflex_frontend (matches COPY destination in Dockerfile).
-    # This enables Reflex hot-reload: file save → instant reload, no image rebuild needed.
     volumes:
-      - reflex_dev_web:/app/.web
-      - ./apps/reflex_frontend/reflex_frontend:/app/reflex_frontend
-    command: ["reflex", "run", "--env", "dev", "--backend-host", "0.0.0.0", "--backend-port", "8002", "--frontend-port", "3000", "--loglevel", "debug"]
+      - ./apps/web:/app
+      - web_dev_node_modules:/app/node_modules
+      - web_dev_next:/app/.next
+    command: ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       start_period: 120s
@@ -142,7 +138,9 @@ volumes:
     driver: local
   hf_cache:
     driver: local
-  reflex_dev_web:
+  web_dev_node_modules:
+    driver: local
+  web_dev_next:
     driver: local
 
 networks:

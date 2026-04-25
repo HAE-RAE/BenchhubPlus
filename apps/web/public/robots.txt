@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+
+# Block authenticated app shell pages from search indexing.
+# The marketing/landing surface lives at "/" and is intended to be indexed;
+# tighten this once dedicated /app or /workspace routes are introduced.

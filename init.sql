@@ -1,31 +1,12 @@
 -- Initialize BenchHub Plus Database
+--
+-- NOTE: The official postgres docker image creates the POSTGRES_USER /
+-- POSTGRES_DB / POSTGRES_PASSWORD before running scripts in
+-- /docker-entrypoint-initdb.d, so we do NOT (and must not) hardcode a
+-- password here. This script only adds extensions and helpers on top of
+-- the already-provisioned database/role.
 
--- Create database if not exists
-CREATE DATABASE IF NOT EXISTS benchhub_plus;
-
--- Create user if not exists
-DO
-$do$
-BEGIN
-   IF NOT EXISTS (
-      SELECT FROM pg_catalog.pg_roles
-      WHERE  rolname = 'benchhub') THEN
-
-      CREATE ROLE benchhub LOGIN PASSWORD 'benchhub_password';
-   END IF;
-END
-$do$;
-
--- Grant privileges
-GRANT ALL PRIVILEGES ON DATABASE benchhub_plus TO benchhub;
-
--- Connect to the database
 \c benchhub_plus;
-
--- Grant schema privileges
-GRANT ALL ON SCHEMA public TO benchhub;
-GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO benchhub;
-GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO benchhub;
 
 -- Create extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";

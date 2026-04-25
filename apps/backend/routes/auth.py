@@ -3,19 +3,21 @@ import re
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from ...core.config import get_settings
 from ...core.db import User, Organization, Workspace, WorkspaceMembership, get_db
 from ...core.schemas import ErrorResponse, UserResponse
 from ...core.security import (
     create_jwt_token,
+    enforce_login_rate_limit,
     get_google_user_info,
-    verify_jwt_token,
+    mask_email,
 )
+from ..dependencies import get_current_user as _get_current_user_dep
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -83,10 +85,41 @@ def _ensure_default_workspace(user: User, db: Session) -> None:
 
 
 class DevLoginRequest(BaseModel):
-    """Payload for development-only login."""
+    """Payload for development-only login.
 
-    email: str = Field(..., min_length=1)
-    name: Optional[str] = None
+    The dev path is intentionally lenient about email format (so quick
+    placeholders like ``dev@local`` work). The endpoint itself is gated
+    behind DEBUG / DEV_AUTH_BYPASS, so the only consumer is a developer
+    on their own machine.
+    """
+
+    email: str = Field(..., min_length=3, max_length=255)
+    name: Optional[str] = Field(default=None, max_length=255)
+
+    @field_validator("email")
+    @classmethod
+    def _shape_check(cls, v: str) -> str:
+        v = (v or "").strip()
+        if "@" not in v or v.startswith("@") or v.endswith("@"):
+            raise ValueError("email must contain a local-part and a domain")
+        return v
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request and request.client else "anonymous"
+
+
+def _set_auth_cookie(response, token: str) -> None:
+    """Set the access_token cookie with environment-aware flags."""
+    response.set_cookie(
+        key="access_token",
+        value=token,
+        httponly=True,
+        secure=settings.effective_cookie_secure,
+        samesite=settings.cookie_samesite,
+        max_age=settings.access_token_expire_hours * 3600,
+        path="/",
+    )
 
 
 @router.get("/google/login", status_code=status.HTTP_302_FOUND)
@@ -110,118 +143,90 @@ async def google_login():
 
 
 @router.get("/google/callback", status_code=status.HTTP_302_FOUND)
-async def google_callback(code: str, db: Session = Depends(get_db)):
+async def google_callback(
+    request: Request,
+    code: str,
+    db: Session = Depends(get_db),
+):
     """Handle Google OAuth callback and authenticate user."""
     if settings.debug or settings.dev_auth_bypass:
         raise HTTPException(status_code=400, detail="Google OAuth disabled in dev mode")
+
+    await enforce_login_rate_limit(request, scope="oauth")
+
     try:
         google_user = await get_google_user_info(code)
-        logger.info(f"Google OAuth successful for email: {google_user.get('email')}")
-        
-        user = db.query(User).filter(User.email == google_user["email"]).first()
-        
+        email = google_user.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Google account is missing an email")
+        logger.info("Google OAuth successful for email: %s", mask_email(email))
+
+        user = db.query(User).filter(User.email == email).first()
+
         if not user:
-            is_first_user = db.query(User).count() == 0
             user = User(
                 google_id=google_user["id"],
-                email=google_user["email"],
+                email=email,
                 email_verified=google_user.get("verified_email", False),
                 full_name=google_user.get("name"),
                 picture_url=google_user.get("picture"),
                 is_active=True,
                 last_login_at=datetime.now(timezone.utc),
-                role="admin" if is_first_user else "user",
-                is_admin=is_first_user,
+                role="user",
+                is_admin=False,
             )
             db.add(user)
             db.commit()
             db.refresh(user)
-            logger.info(f"Created new user: {user.email}")
+            logger.info("Created new user id=%s", user.id)
         else:
             user.last_login_at = datetime.now(timezone.utc)
             user.full_name = google_user.get("name", user.full_name)
             user.picture_url = google_user.get("picture", user.picture_url)
             db.commit()
-            logger.info(f"User logged in: {user.email}")
+            logger.info("User logged in id=%s", user.id)
 
         _ensure_default_workspace(user, db)
-        
+
         access_token = create_jwt_token(user.id, user.email)
-        
-        frontend_url = f"{settings.frontend_url}?token={access_token}"
-        response = RedirectResponse(url=frontend_url, status_code=302)
-        
-        response.set_cookie(
-            key="access_token",
-            value=access_token,
-            httponly=True,
-            secure=False,
-            samesite="lax",
-            max_age=86400,
-            path="/"
-        )
-        
-        logger.info(f"JWT token generated for user: {user.email}")
+
+        # Do not put the token in the redirect URL — leaks via referer/history/logs.
+        # The HttpOnly cookie below carries the session; the SPA should call /me.
+        response = RedirectResponse(url=settings.frontend_url, status_code=302)
+        _set_auth_cookie(response, access_token)
         return response
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Google OAuth callback failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Authentication failed: {str(e)}"
-        )
+        # Never leak the underlying exception text to the client.
+        logger.exception("Google OAuth callback failed: %s", e)
+        raise HTTPException(status_code=500, detail="Authentication failed")
 
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(
-    authorization: Optional[str] = Header(None),
-    db: Session = Depends(get_db)
+    user: User = Depends(_get_current_user_dep),
 ):
-    """Get current authenticated user information."""
-    try:
-        token = None
-        if authorization and authorization.startswith("Bearer "):
-            token = authorization.replace("Bearer ", "")
-        
-        if not token:
-            raise HTTPException(
-                status_code=401,
-                detail="Not authenticated - no token provided"
-            )
-        
-        current_user = verify_jwt_token(token)
-        user_id = int(current_user["sub"])
-        
-        user = db.query(User).filter(User.id == user_id).first()
-        
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        if not user.is_active:
-            raise HTTPException(status_code=403, detail="User account is inactive")
-        
-        return {
-            "id": user.id,
-            "email": user.email,
-            "name": user.full_name,
-            "picture": user.picture_url,
-            "email_verified": user.email_verified,
-            "role": user.role,
-            "organization_id": user.default_org_id,
-            "workspace_id": user.default_workspace_id,
-            "created_at": user.created_at,
-            "last_login_at": user.last_login_at
-        }
-        
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid user ID in token")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get current user: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get user information")
+    """Return the current authenticated user.
+
+    Auth comes from the shared dependency which reads either the
+    ``Authorization: Bearer …`` header or the ``access_token`` cookie set
+    by the login endpoints — keeping this route in sync with every other
+    authenticated endpoint.
+    """
+    return {
+        "id": user.id,
+        "email": user.email,
+        "name": user.full_name,
+        "picture": user.picture_url,
+        "email_verified": user.email_verified,
+        "role": user.role,
+        "organization_id": user.default_org_id,
+        "workspace_id": user.default_workspace_id,
+        "created_at": user.created_at,
+        "last_login_at": user.last_login_at,
+    }
 
 
 @router.post("/logout", status_code=status.HTTP_302_FOUND)
@@ -231,28 +236,33 @@ async def logout():
         url=settings.frontend_url,
         status_code=302
     )
-    
+
     response.delete_cookie(
         key="access_token",
         path="/",
         httponly=True,
-        samesite="lax"
+        secure=settings.effective_cookie_secure,
+        samesite=settings.cookie_samesite,
     )
-    
+
     logger.info("User logged out")
     return response
 
 
 @router.post("/dev-login")
 async def dev_login(
+    request: Request,
     payload: DevLoginRequest,
     db: Session = Depends(get_db),
 ):
-    """Development-only login that accepts any input."""
-    if not (settings.debug or settings.dev_auth_bypass):
+    """Development-only login. Disabled outside debug/dev_auth_bypass mode."""
+    # Hard gate: refuse if running in production-like mode.
+    if settings.is_production or not (settings.debug or settings.dev_auth_bypass):
         raise HTTPException(status_code=404, detail="Not found")
 
-    email = payload.email.strip()
+    await enforce_login_rate_limit(request, scope="dev-login")
+
+    email = payload.email.strip().lower()
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
 
@@ -282,13 +292,19 @@ async def dev_login(
     _ensure_default_workspace(user, db)
 
     access_token = create_jwt_token(user.id, user.email)
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "user": {
-            "id": user.id,
-            "email": user.email,
-            "name": user.full_name,
-            "role": user.role,
-        },
-    }
+    response = JSONResponse(
+        content={
+            "access_token": access_token,
+            "token_type": "bearer",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.full_name,
+                "role": user.role,
+            },
+        }
+    )
+    # Mirror the Google callback: drop the JWT into an HttpOnly cookie so
+    # subsequent `api.me()` calls from the SPA carry credentials.
+    _set_auth_cookie(response, access_token)
+    return response

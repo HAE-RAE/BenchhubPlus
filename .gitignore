@@ -203,5 +203,9 @@ node_modules/
 *.log
 .reflex/
 
+# Next.js
+.next/
+*.tsbuildinfo
+
 # 원시 벤치마크 데이터 파일 제외
 *.jsonl

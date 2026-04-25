@@ -22,8 +22,15 @@ RUN apt-get update && apt-get install -y \
 COPY pyproject.toml ./
 COPY README.md ./
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -e .
+# Install Python dependencies. Set INSTALL_WORKER_EXTRAS=1 to also pull
+# heavy local-inference deps (vllm, etc.) — only safe on linux/amd64 with
+# CUDA. Default leaves them out so the image builds on ARM64 dev machines.
+ARG INSTALL_WORKER_EXTRAS=0
+RUN if [ "$INSTALL_WORKER_EXTRAS" = "1" ]; then \
+      pip install --no-cache-dir -e ".[worker]"; \
+    else \
+      pip install --no-cache-dir -e .; \
+    fi
 
 # Optional: prefetch model weights for HRET (set build args to enable)
 ARG HRET_PREFETCH_MODEL=""

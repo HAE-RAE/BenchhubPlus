@@ -1,0 +1,94 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Resend-inspired token system. Light is the default surface; dark
+       mirrors the same hue families with inverted lightness. All values
+       are HSL channels so Tailwind's `hsl(var(--token))` opacity helpers
+       (`bg-primary/50`) work cleanly. */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 4%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
+    --primary: 240 10% 4%;          /* near-black CTA */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 10% 4%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 252 70% 60%;          /* indigo-violet spot */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 240 10% 4%;
+    --radius: 0.625rem;
+
+    --font-sans: "Geist", "Inter", "Aptos", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "Geist Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+
+  .dark, [data-theme="dark"] {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 96%;
+    --card: 240 8% 6%;
+    --card-foreground: 0 0% 96%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 240 10% 4%;
+    --secondary: 240 5% 12%;
+    --secondary-foreground: 0 0% 96%;
+    --muted: 240 5% 12%;
+    --muted-foreground: 240 4% 64%;
+    --accent: 252 70% 65%;
+    --accent-foreground: 240 10% 4%;
+    --destructive: 0 70% 60%;
+    --destructive-foreground: 0 0% 96%;
+    --border: 240 6% 16%;
+    --input: 240 6% 16%;
+    --ring: 0 0% 96%;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --background: 240 10% 4%;
+      --foreground: 0 0% 96%;
+      --card: 240 8% 6%;
+      --card-foreground: 0 0% 96%;
+      --primary: 0 0% 98%;
+      --primary-foreground: 240 10% 4%;
+      --secondary: 240 5% 12%;
+      --secondary-foreground: 0 0% 96%;
+      --muted: 240 5% 12%;
+      --muted-foreground: 240 4% 64%;
+      --accent: 252 70% 65%;
+      --accent-foreground: 240 10% 4%;
+      --destructive: 0 70% 60%;
+      --destructive-foreground: 0 0% 96%;
+      --border: 240 6% 16%;
+      --input: 240 6% 16%;
+      --ring: 0 0% 96%;
+    }
+  }
+
+  body {
+    color: hsl(var(--foreground));
+    background: hsl(var(--background));
+    font-family: var(--font-sans);
+    letter-spacing: -0.005em;
+  }
+}
+
+/* Honour user motion preferences globally. Tailwind doesn't include this
+   reset by default, and `animate-pulse` / `animate-bounce` etc. respect
+   the override automatically once these durations collapse to ~0ms. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

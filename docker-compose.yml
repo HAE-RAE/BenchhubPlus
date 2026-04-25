@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: benchhub_plus
       POSTGRES_USER: benchhub
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-benchhub_password}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -25,15 +25,18 @@ services:
   redis:
     image: redis:7-alpine
     container_name: benchhub_redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}", "--appendonly", "yes"]
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     restart: unless-stopped
 
   # FastAPI Backend
@@ -42,17 +45,17 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     container_name: benchhub_backend
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql://benchhub:${POSTGRES_PASSWORD:-benchhub_password}@postgres:5432/benchhub_plus
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # Container-network values overlay any matching keys from .env so the
+      # service hostnames (postgres, redis) resolve correctly inside compose.
+      - DATABASE_URL=${DATABASE_URL:-postgresql://benchhub:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/benchhub_plus}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       - API_HOST=0.0.0.0
       - API_PORT=8000
-      - DEBUG=false
-      - LOG_LEVEL=info
-      - FRONTEND_URL=http://localhost:3000
     ports:
       - "8000:8000"
     depends_on:
@@ -73,13 +76,13 @@ services:
         HRET_PREFETCH_MODEL: ${HRET_PREFETCH_MODEL:-}
         HRET_PREFETCH_REVISION: ${HRET_PREFETCH_REVISION:-}
     container_name: benchhub_worker
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql://benchhub:${POSTGRES_PASSWORD:-benchhub_password}@postgres:5432/benchhub_plus
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - DEBUG=false
-      - LOG_LEVEL=info
+      - DATABASE_URL=${DATABASE_URL:-postgresql://benchhub:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/benchhub_plus}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       - HF_HOME=/app/.cache/huggingface
       - TRANSFORMERS_CACHE=/app/.cache/huggingface
       - HF_HUB_DISABLE_TELEMETRY=1
@@ -97,21 +100,20 @@ services:
       - hf_cache:/app/.cache/huggingface
     restart: unless-stopped
 
-  # Reflex Frontend
-  reflex:
+  # Next.js Frontend
+  web:
     build:
       context: .
-      dockerfile: Dockerfile.reflex
-    container_name: benchhub_reflex
+      dockerfile: Dockerfile.web
+    container_name: benchhub_web
     environment:
-      - API_BASE_URL=http://backend:8000
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
     ports:
       - "3000:3000"
-      - "8002:8002"
     depends_on:
       - backend
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -122,7 +124,7 @@ services:
     image: mher/flower:0.9.7
     container_name: benchhub_flower
     environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?REDIS_PASSWORD is required}@redis:6379/0
       - FLOWER_PORT=5555
     ports:
       - "5555:5555"
@@ -142,7 +144,7 @@ services:
       - ./ssl:/etc/nginx/ssl:ro
     depends_on:
       - backend
-      - reflex
+      - web
     restart: unless-stopped
 
 volumes:

@@ -1,15 +1,31 @@
 """Configuration management for BenchHub Plus."""
 
+import logging
 import os
 from typing import List, Optional
 
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger(__name__)
+
+
+_INSECURE_SECRET_DEFAULTS = {
+    "",
+    "change-me",
+    "changeme",
+    "secret",
+    "secretkey",
+    "password",
+    "dev",
+    "development",
+    "test",
+}
 
 
 class Settings(BaseSettings):
     """Application settings."""
-    
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -21,6 +37,18 @@ class Settings(BaseSettings):
     database_url: str = Field(
         default="sqlite:///./benchhub_plus.db",
         description="Database connection URL"
+    )
+    db_pool_size: int = Field(
+        default=10,
+        description="SQLAlchemy connection pool size (ignored on SQLite / pgbouncer pooler)"
+    )
+    db_max_overflow: int = Field(
+        default=20,
+        description="SQLAlchemy connection pool overflow"
+    )
+    db_pool_timeout: int = Field(
+        default=30,
+        description="Seconds to wait for a free connection before giving up"
     )
     
     # Redis Configuration
@@ -141,16 +169,86 @@ class Settings(BaseSettings):
         default_factory=list,
         description="Comma-separated list of allowed CORS origins"
     )
-    
+
+    # Cookie / transport security
+    cookie_secure: Optional[bool] = Field(
+        default=None,
+        description="Force Secure cookie flag. If unset, defaults to True when debug=False."
+    )
+    cookie_samesite: str = Field(
+        default="lax",
+        description="SameSite policy for auth cookies (lax, strict, none)"
+    )
+
+    # Trusted host header validation (production hardening)
+    trusted_hosts: List[str] = Field(
+        default_factory=list,
+        description="Hosts allowed in Host header. Empty disables the check."
+    )
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def _validate_jwt_secret(cls, v: str) -> str:
+        if v is None or len(v) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters. "
+                "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(48))'"
+            )
+        if v.strip().lower() in _INSECURE_SECRET_DEFAULTS:
+            raise ValueError("JWT_SECRET_KEY must not be a placeholder value")
+        return v
+
+    @field_validator("secret_key")
+    @classmethod
+    def _validate_secret_key(cls, v: str) -> str:
+        if v is None or len(v) < 32:
+            raise ValueError(
+                "SECRET_KEY must be at least 32 characters. "
+                "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(48))'"
+            )
+        if v.strip().lower() in _INSECURE_SECRET_DEFAULTS:
+            raise ValueError("SECRET_KEY must not be a placeholder value")
+        return v
+
+    @field_validator("cookie_samesite")
+    @classmethod
+    def _validate_samesite(cls, v: str) -> str:
+        normalized = (v or "lax").lower()
+        if normalized not in {"lax", "strict", "none"}:
+            raise ValueError("cookie_samesite must be one of: lax, strict, none")
+        return normalized
+
+    @model_validator(mode="after")
+    def _enforce_production_safety(self) -> "Settings":
+        """Refuse dangerous combinations when debug is off."""
+        if not self.debug and self.dev_auth_bypass:
+            raise ValueError(
+                "DEV_AUTH_BYPASS=true is not allowed when DEBUG=false. "
+                "Disable dev auth bypass before running in production."
+            )
+        return self
+
     @property
     def is_sqlite(self) -> bool:
         """Check if using SQLite database."""
         return self.database_url.startswith("sqlite")
-    
+
     @property
     def is_postgresql(self) -> bool:
         """Check if using PostgreSQL database."""
         return self.database_url.startswith("postgresql")
+
+    @property
+    def is_production(self) -> bool:
+        """Treat any non-debug, non-dev-bypass deployment as production-grade."""
+        return not (self.debug or self.dev_auth_bypass)
+
+    @property
+    def effective_cookie_secure(self) -> bool:
+        """Resolve Secure cookie flag with production-safe default."""
+        if self.cookie_secure is not None:
+            return bool(self.cookie_secure)
+        return self.is_production
 
 
 # Global settings instance

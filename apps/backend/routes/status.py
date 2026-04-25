@@ -21,6 +21,7 @@ from ...core.schemas import (
     CleanupTaskStatus,
     CleanupProgress,
 )
+from ...core.security import validate_task_identifier
 from ..repositories.tasks_repo import TasksRepository
 from ..services.audit import AuditService
 from ..services.orchestrator import EvaluationOrchestrator
@@ -150,12 +151,13 @@ async def health_check(request: Request, response: Response, db: Session = Depen
 
 @router.get("/tasks/{task_id}", response_model=Dict[str, Any])
 async def get_task_status(
-    task_id: str = Path(..., description="Task ID"),
+    task_id: str = Path(..., description="Task ID", min_length=1, max_length=128),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Get status of evaluation task."""
-    
+
+    validate_task_identifier(task_id)
     try:
         repo = TasksRepository(db)
         task = repo.get_task(task_id)
@@ -233,6 +235,7 @@ async def control_task(
     current_user=Depends(require_admin),
 ):
     """Control a task (cancel/hold/resume/restart)."""
+    validate_task_identifier(task_id)
     repo = TasksRepository(db)
     task = repo.get_task(task_id)
     if not task:
@@ -296,6 +299,7 @@ async def get_task_details(
     current_user: User = Depends(get_current_user),
 ):
     """Return full task payload and logs."""
+    validate_task_identifier(task_id)
     repo = TasksRepository(db)
     task = repo.get_task_details(task_id)
     if not task:
@@ -407,6 +411,7 @@ async def delete_task(
     current_user: User = Depends(get_current_user),
 ):
     """Hard-delete a task from the database."""
+    validate_task_identifier(task_id)
     try:
         repo = TasksRepository(db)
         task = repo.get_task(task_id)
@@ -436,7 +441,8 @@ async def cancel_task(
     current_user: User = Depends(get_current_user),
 ):
     """Cancel a pending evaluation task."""
-    
+
+    validate_task_identifier(task_id)
     try:
         repo = TasksRepository(db)
         task = repo.get_task(task_id)
@@ -550,6 +556,7 @@ async def get_cleanup_status(
 ):
     """Get status/result of a cleanup task."""
 
+    validate_task_identifier(task_id)
     try:
         async_result = celery_app.AsyncResult(task_id)
         info = async_result.info or {}

@@ -278,12 +278,13 @@ async def delete_leaderboard_entry(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@router.delete("/cache")
+@router.delete("/cache", dependencies=[Depends(require_admin)])
 async def clear_cache(
     older_than_hours: Optional[int] = Query(None, ge=1, description="Clear entries older than N hours"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
 ):
-    """Clear leaderboard cache."""
+    """Clear leaderboard cache (admin only)."""
     
     try:
         repo = LeaderboardRepository(db)

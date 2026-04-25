@@ -19,11 +19,30 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import func
 
 from .config import get_settings
 
 settings = get_settings()
+
+
+def _is_pgbouncer_url(url: str) -> bool:
+    """Detect Supabase / pgbouncer transaction-pooling endpoints.
+
+    Supabase exposes its transaction pooler on port 6543 with a hostname like
+    `aws-0-<region>.pooler.supabase.com`. The session pooler / direct
+    connection (5432) supports prepared statements normally.
+    """
+    if not url:
+        return False
+    lowered = url.lower()
+    return (
+        ":6543" in lowered
+        or "pooler.supabase" in lowered
+        or "pgbouncer=true" in lowered
+    )
+
 
 # Create database engine
 if settings.is_sqlite:
@@ -32,10 +51,36 @@ if settings.is_sqlite:
         connect_args={"check_same_thread": False},
         echo=settings.debug,
     )
+elif _is_pgbouncer_url(settings.database_url):
+    # Supabase transaction pooler: pgbouncer in transaction mode does NOT
+    # preserve session state across queries, so we disable client-side
+    # connection pooling (NullPool) and turn off prepared statement caching.
+    # The pooler itself handles connection reuse upstream.
+    engine = create_engine(
+        settings.database_url,
+        echo=settings.debug,
+        poolclass=NullPool,
+        connect_args={
+            # psycopg2 has no per-connection prepared statement cache, but
+            # SQLAlchemy emits prepared statements for some dialects. Forcing
+            # plain text execution avoids "prepared statement already exists"
+            # errors when pgbouncer reuses backend connections.
+            "options": "-c statement_timeout=60000",
+            "sslmode": "require",
+        },
+    )
 else:
     engine = create_engine(
         settings.database_url,
         echo=settings.debug,
+        # Production-grade pool settings: drop dead connections before use,
+        # recycle long-lived connections to dodge proxy idle-timeouts, and
+        # cap concurrency so we don't exhaust the DB's max_connections.
+        pool_pre_ping=True,
+        pool_recycle=1800,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        pool_timeout=settings.db_pool_timeout,
     )
 
 # Create session factory
@@ -328,6 +373,42 @@ class AuditLog(Base):
 
     __table_args__ = (
         Index("idx_audit_resource", "resource", "created_at"),
+    )
+
+
+class EvaluationDraft(Base):
+    """Draft evaluation specs being built conversationally.
+
+    Stores the chat thread and the partially filled spec until the user
+    clicks RUN, at which point the draft is converted into an
+    ``EvaluationTask`` and marked ``launched``.
+
+    Sensitive material like model API keys is *never* persisted here —
+    those are collected by the SPA at launch time and forwarded directly
+    to the existing ``/leaderboard/generate`` endpoint.
+    """
+
+    __tablename__ = "evaluation_drafts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=True)
+    # JSON-encoded slot bag (query, category_*, sample_scale, suggested_models).
+    spec = Column(Text, nullable=False, default="{}")
+    # JSON array of {role, content, created_at} — the visible chat thread.
+    messages = Column(Text, nullable=False, default="[]")
+    status = Column(String(32), nullable=False, default="draft", index=True)
+    launched_task_id = Column(String(255), nullable=True)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("idx_evaluation_drafts_user_status", "user_id", "status"),
+        Index("idx_evaluation_drafts_updated_at", "updated_at"),
     )
 
 

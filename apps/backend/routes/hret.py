@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from ...core.db import get_db, EvaluationTask, User
 from ...core.schemas import ModelInfo
+from ...core.security import validate_task_identifier
 from ...worker.celery_app import celery_app
 from ...worker.hret_runner import HRETRunner, HRET_AVAILABLE
 from ..dependencies import get_current_user
@@ -111,7 +112,7 @@ async def get_hret_config(
         
     except Exception as e:
         logger.error(f"Failed to get HRET config: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/evaluate", response_model=HRETEvaluationResponse)
@@ -141,10 +142,11 @@ async def start_hret_evaluation(
         # Create evaluation task
         task_id = f"hret_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}_{hash(request.plan_yaml) % 10000:04d}"
         
-        # Store task in database
+        # Store task in database — bind to current user for IDOR checks.
         db_task = EvaluationTask(
             task_id=task_id,
             status="PENDING",
+            user_id=current_user.id,
             plan_details=json.dumps({
                 "plan_yaml": request.plan_yaml,
                 "models": [model.dict() for model in request.models],
@@ -179,7 +181,7 @@ async def start_hret_evaluation(
         raise
     except Exception as e:
         logger.error(f"Failed to start HRET evaluation: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/evaluate/{task_id}", response_model=HRETStatusResponse)
@@ -189,12 +191,18 @@ async def get_hret_evaluation_status(
     current_user: User = Depends(get_current_user),
 ):
     """Get HRET evaluation task status."""
-    
+
+    validate_task_identifier(task_id)
     try:
         # Get task from database
         task = db.query(EvaluationTask).filter(EvaluationTask.task_id == task_id).first()
-        
+
         if not task:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        # Authorization: owner or admin only.
+        is_admin = bool(current_user and (current_user.is_admin or current_user.role == "admin"))
+        if task.user_id is not None and not is_admin and task.user_id != current_user.id:
             raise HTTPException(status_code=404, detail="Task not found")
         
         # Parse result if available
@@ -226,7 +234,7 @@ async def get_hret_evaluation_status(
         raise
     except Exception as e:
         logger.error(f"Failed to get task status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class PlanValidationRequest(BaseModel):
@@ -257,10 +265,10 @@ async def validate_hret_plan(
         }
         
     except Exception as e:
-        logger.error(f"Plan validation error: {e}")
+        logger.error("Plan validation error: %s", e, exc_info=True)
         return {
             "valid": False,
-            "message": f"Validation error: {str(e)}"
+            "message": "Plan validation failed",
         }
 
 
@@ -293,7 +301,7 @@ async def get_hret_results(
         
     except Exception as e:
         logger.error(f"Failed to get HRET results: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/leaderboard")
@@ -325,7 +333,7 @@ async def get_hret_leaderboard(
         
     except Exception as e:
         logger.error(f"Failed to get HRET leaderboard: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def run_hret_evaluation_task(

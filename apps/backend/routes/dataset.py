@@ -20,29 +20,45 @@ async def recent_models(
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Return recently used model names from credentials + task history."""
-    names = set()
+    """Return recently used model names from this user's task history.
 
-    # From model_credentials table
-    creds = (
-        db.query(ModelCredential.model_name)
-        .order_by(ModelCredential.created_at.desc())
-        .limit(limit)
-        .all()
-    )
-    for (name,) in creds:
-        if name:
-            names.add(name)
+    The shared ``model_credentials`` table currently has no per-user column,
+    so for non-admins we restrict the response to model names that appear
+    in the caller's own evaluation tasks. Admins see the global view.
+    """
+    is_admin = bool(current_user and (current_user.is_admin or current_user.role == "admin"))
+    names: set[str] = set()
 
-    # From evaluation_tasks model_name field
-    tasks = (
-        db.query(EvaluationTask.model_name)
-        .filter(EvaluationTask.model_name.isnot(None))
-        .order_by(EvaluationTask.created_at.desc())
-        .limit(limit)
-        .all()
-    )
-    for (name,) in tasks:
+    if is_admin:
+        # Admins get the full global view (credentials + all task names).
+        for (name,) in (
+            db.query(ModelCredential.model_name)
+            .order_by(ModelCredential.created_at.desc())
+            .limit(limit)
+            .all()
+        ):
+            if name:
+                names.add(name)
+
+        task_query = (
+            db.query(EvaluationTask.model_name)
+            .filter(EvaluationTask.model_name.isnot(None))
+        )
+    else:
+        # Non-admins: only model names from the caller's own tasks. This
+        # closes the tenant-leak where one user could enumerate models
+        # configured by another user.
+        task_query = (
+            db.query(EvaluationTask.model_name)
+            .filter(
+                EvaluationTask.model_name.isnot(None),
+                EvaluationTask.user_id == current_user.id,
+            )
+        )
+
+    for (name,) in (
+        task_query.order_by(EvaluationTask.created_at.desc()).limit(limit).all()
+    ):
         if name:
             # model_name may be comma-separated if multiple models
             for part in name.split(","):
