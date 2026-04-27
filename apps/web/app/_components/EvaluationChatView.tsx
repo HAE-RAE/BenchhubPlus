@@ -61,9 +61,26 @@ type LaunchState = "idle" | "launching" | "launched";
 type Props = {
   onLaunched: (taskId: string) => void;
   onError: (message: string) => void;
+  /**
+   * If provided, mount with this specific draft (e.g. when the user picks a
+   * draft from the sidebar history). When `null`/omitted, the view falls back
+   * to the most recent ongoing draft or creates a new one.
+   */
+  activeDraftId?: number | null;
+  /**
+   * Fires whenever the local draft state changes (initial load, send,
+   * fresh-start, launch). Lets the parent keep the sidebar in sync without
+   * round-tripping through the drafts list endpoint on every keystroke.
+   */
+  onDraftChanged?: (draft: EvaluationDraft | null) => void;
 };
 
-export default function EvaluationChatView({ onLaunched, onError }: Props) {
+export default function EvaluationChatView({
+  onLaunched,
+  onError,
+  activeDraftId,
+  onDraftChanged
+}: Props) {
   const [draft, setDraft] = useState<EvaluationDraft | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
   const [composer, setComposer] = useState("");
@@ -73,6 +90,13 @@ export default function EvaluationChatView({ onLaunched, onError }: Props) {
   const [activePane, setActivePane] = useState<"chat" | "spec">("chat");
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchor = useRef<HTMLDivElement | null>(null);
+
+  // Notify the parent on every draft mutation so History can stack the entry
+  // as soon as the conversation starts (rather than waiting for launch).
+  useEffect(() => {
+    if (!onDraftChanged) return;
+    onDraftChanged(draft);
+  }, [draft, onDraftChanged]);
 
   const spec = draft?.spec ?? {};
   const messages: ChatMessage[] = useMemo(() => draft?.messages ?? [], [draft]);
@@ -88,9 +112,21 @@ export default function EvaluationChatView({ onLaunched, onError }: Props) {
     hasUsableModel &&
     launchState !== "launching";
 
+  const draftId = draft?.id ?? null;
+
   const ensureDraft = useCallback(async () => {
+    // The sidebar tells us "go to draft X" by setting activeDraftId. If we
+    // already have that draft loaded (e.g. because we're the ones who told
+    // the parent about it after a fresh create), skip the round-trip.
+    if (activeDraftId != null && draftId === activeDraftId) return;
     setBootError(null);
     try {
+      if (activeDraftId != null) {
+        const target = await api.getDraft(activeDraftId);
+        setDraft(target);
+        setLaunchState(target.status === "launched" ? "launched" : "idle");
+        return;
+      }
       const list = await api.listDrafts(20);
       const ongoing = (list.drafts || []).find((d) => d.status === "draft");
       if (ongoing) {
@@ -104,7 +140,7 @@ export default function EvaluationChatView({ onLaunched, onError }: Props) {
       setBootError(msg);
       onError(msg);
     }
-  }, [onError]);
+  }, [activeDraftId, draftId, onError]);
 
   useEffect(() => {
     void ensureDraft();

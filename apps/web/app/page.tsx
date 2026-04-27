@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
 import {
   Activity,
@@ -14,6 +14,7 @@ import {
   Loader2,
   LogIn,
   LogOut,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Pause,
@@ -38,6 +39,7 @@ import { Separator } from "@/components/ui/separator";
 import EvaluationChatView from "./_components/EvaluationChatView";
 import { ThemeToggle } from "./_components/ThemeToggle";
 import type {
+  EvaluationDraft,
   LeaderboardEntry,
   ManagerSnapshot,
   Suggestion,
@@ -81,6 +83,8 @@ export default function BenchHubApp() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [selectedTask, setSelectedTask] = useState<TaskDetail | null>(null);
+  const [drafts, setDrafts] = useState<EvaluationDraft[]>([]);
+  const [activeDraftId, setActiveDraftId] = useState<number | null>(null);
 
   const [evalStep, setEvalStep] = useState<EvalStep>("input");
 
@@ -112,6 +116,8 @@ export default function BenchHubApp() {
       setUser(null);
       setTasks([]);
       setSelectedTask(null);
+      setDrafts([]);
+      setActiveDraftId(null);
       return "Your session has expired. Please sign in again.";
     }
     return error instanceof Error ? error.message : fallback;
@@ -123,7 +129,12 @@ export default function BenchHubApp() {
       const nextUser = await api.me();
       setUser(nextUser);
       setAuthError("");
-      await Promise.all([loadTasks(nextUser.id), loadCategories(), loadLeaderboard()]);
+      await Promise.all([
+        loadTasks(nextUser.id),
+        loadDrafts(),
+        loadCategories(),
+        loadLeaderboard()
+      ]);
     } catch (error) {
       setUser(null);
       // 401 just means no/expired session — don't surface as an error message.
@@ -143,6 +154,59 @@ export default function BenchHubApp() {
     if (!user && userId === undefined) return;
     const payload = await api.listTasks(userId);
     setTasks(payload.tasks.map((task) => taskFromApi(task as Record<string, unknown>)));
+  }
+
+  async function loadDrafts() {
+    try {
+      const payload = await api.listDrafts(20);
+      const ongoing = (payload.drafts || []).filter((d) => d.status === "draft");
+      setDrafts(ongoing);
+    } catch {
+      // History is best-effort; don't surface failures here.
+    }
+  }
+
+  // Called by EvaluationChatView whenever its draft state changes so the
+  // sidebar reflects new conversations immediately (no extra round-trip).
+  // Memoized so the child effect that calls it doesn't re-fire each render.
+  const handleDraftSync = useCallback((draft: EvaluationDraft | null) => {
+    if (!draft) return;
+    if (draft.status !== "draft") {
+      setDrafts((current) => current.filter((d) => d.id !== draft.id));
+      setActiveDraftId((current) => (current === draft.id ? null : current));
+      return;
+    }
+    // Update in place if the draft already exists so clicking an older entry
+    // doesn't yank it to the top (keeps the gray "selected" indicator on the
+    // row the user actually clicked). New drafts get prepended.
+    setDrafts((current) => {
+      const idx = current.findIndex((d) => d.id === draft.id);
+      if (idx >= 0) {
+        const next = current.slice();
+        next[idx] = draft;
+        return next;
+      }
+      return [draft, ...current];
+    });
+    setActiveDraftId(draft.id);
+  }, []);
+
+  async function openDraft(draftId: number) {
+    setView("evaluation");
+    setEvalStep("input");
+    setSelectedTask(null);
+    setActiveDraftId(draftId);
+  }
+
+  async function removeDraft(draftId: number) {
+    setDrafts((current) => current.filter((d) => d.id !== draftId));
+    if (activeDraftId === draftId) setActiveDraftId(null);
+    if (!isAuthed) return;
+    try {
+      await api.deleteDraft(draftId);
+    } catch (error) {
+      show("error", error instanceof Error ? error.message : "Failed to delete draft");
+    }
   }
 
   async function loadCategories() {
@@ -220,6 +284,25 @@ export default function BenchHubApp() {
       await loadSession();
       show("success", "Signed in with development account");
     } catch (error) {
+      if (process.env.NEXT_PUBLIC_DEV_OFFLINE === "true") {
+        const fakeUser: User = {
+          id: 0,
+          email: devEmail || "dev@local",
+          name: (devEmail || "dev@local").split("@")[0],
+          picture: null,
+          role: "admin"
+        };
+        setUser(fakeUser);
+        setAuthError("");
+        setAuthChecked(true);
+        try {
+          await Promise.all([loadCategories(), loadLeaderboard()]);
+        } catch {
+          /* offline: ignore data-fetch errors */
+        }
+        show("info", `Offline UI preview as ${fakeUser.email} (backend unreachable)`);
+        return;
+      }
       show("error", error instanceof Error ? error.message : "Development login failed");
     } finally {
       setLoading(null);
@@ -235,6 +318,8 @@ export default function BenchHubApp() {
     } finally {
       setUser(null);
       setTasks([]);
+      setDrafts([]);
+      setActiveDraftId(null);
       setSelectedTask(null);
       try {
         window.localStorage.removeItem("benchhub.token");
@@ -272,6 +357,7 @@ export default function BenchHubApp() {
   async function openTask(taskId: string) {
     setView("evaluation");
     setEvalStep("detail");
+    setActiveDraftId(null);
     if (taskId.startsWith("pending-")) {
       setSelectedTask(null);
       return;
@@ -397,6 +483,7 @@ export default function BenchHubApp() {
     setView("evaluation");
     setEvalStep("input");
     setSelectedTask(null);
+    setActiveDraftId(null);
   }
 
   if (!authChecked) {
@@ -575,54 +662,115 @@ export default function BenchHubApp() {
                 variant="ghost"
                 size="icon"
                 className="size-6"
-                title="Refresh tasks"
-                onClick={() => void loadTasks()}
+                title="Refresh history"
+                onClick={() => {
+                  void loadTasks();
+                  void loadDrafts();
+                }}
               >
                 <RefreshCw className="size-3.5" aria-hidden="true" />
               </Button>
             </div>
             <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto pr-1">
-              {tasks.length ? (
-                tasks.map((task) => (
+              {drafts.length === 0 && tasks.length === 0 ? (
+                <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                  No evaluations yet
+                </p>
+              ) : null}
+
+              {drafts.map((draft) => {
+                const lastUserMessage = [...draft.messages]
+                  .reverse()
+                  .find((m) => m.role === "user")?.content;
+                const label =
+                  draft.title?.trim() ||
+                  draft.spec.query?.trim() ||
+                  lastUserMessage?.trim() ||
+                  "New conversation";
+                const isActive = activeDraftId === draft.id;
+                const subtitle =
+                  draft.messages.length > 0
+                    ? `Draft · ${draft.messages.length} message${draft.messages.length === 1 ? "" : "s"}`
+                    : "Draft · just started";
+                return (
                   <button
-                    key={task.id}
+                    key={`draft-${draft.id}`}
                     type="button"
-                    onClick={() => void openTask(task.id)}
-                    className="group flex items-start gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-secondary"
+                    onClick={() => void openDraft(draft.id)}
+                    className={clsx(
+                      "group flex items-start gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-secondary",
+                      isActive && "bg-secondary"
+                    )}
                   >
-                    <span
-                      className={clsx(
-                        "mt-1.5 size-1.5 shrink-0 rounded-full",
-                        task.status === "running" && "bg-amber-500 animate-pulse",
-                        task.status === "completed" && "bg-emerald-500",
-                        task.status === "failed" && "bg-destructive",
-                        task.status === "pending" && "bg-muted-foreground/40"
-                      )}
+                    <MessageSquare
+                      className="mt-0.5 size-3.5 shrink-0 text-accent"
+                      aria-hidden="true"
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{task.query}</span>
+                      <span className="block truncate font-medium">{label}</span>
                       <span className="block truncate text-[11px] text-muted-foreground">
-                        {task.createdAt} · {task.modelName}
+                        {subtitle}
                       </span>
                     </span>
                     <button
                       type="button"
                       className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-card hover:text-foreground"
-                      aria-label={`Remove ${task.query}`}
+                      aria-label={`Remove draft ${label}`}
                       onClick={(event) => {
                         event.stopPropagation();
-                        void removeTask(task.id);
+                        void removeDraft(draft.id);
                       }}
                     >
                       <X className="size-3" aria-hidden="true" />
                     </button>
                   </button>
-                ))
-              ) : (
-                <p className="px-2 py-6 text-center text-xs text-muted-foreground">
-                  No evaluations yet
-                </p>
-              )}
+                );
+              })}
+
+              {tasks.map((task) => {
+                const isTaskActive =
+                  view === "evaluation" &&
+                  evalStep === "detail" &&
+                  selectedTask?.id === task.id;
+                return (
+                <button
+                  key={task.id}
+                  type="button"
+                  onClick={() => void openTask(task.id)}
+                  className={clsx(
+                    "group flex items-start gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors hover:bg-secondary",
+                    isTaskActive && "bg-secondary"
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      "mt-1.5 size-1.5 shrink-0 rounded-full",
+                      task.status === "running" && "bg-amber-500 animate-pulse",
+                      task.status === "completed" && "bg-emerald-500",
+                      task.status === "failed" && "bg-destructive",
+                      task.status === "pending" && "bg-muted-foreground/40"
+                    )}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{task.query}</span>
+                    <span className="block truncate text-[11px] text-muted-foreground">
+                      {task.createdAt} · {task.modelName}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    className="shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:bg-card hover:text-foreground"
+                    aria-label={`Remove ${task.query}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void removeTask(task.id);
+                    }}
+                  >
+                    <X className="size-3" aria-hidden="true" />
+                  </button>
+                </button>
+                );
+              })}
             </div>
           </div>
         ) : null}
@@ -667,11 +815,14 @@ export default function BenchHubApp() {
             />
           ) : (
             <EvaluationChatView
+              activeDraftId={activeDraftId}
+              onDraftChanged={handleDraftSync}
               onLaunched={async (taskId) => {
                 show("success", "Evaluation queued");
                 setEvalStep("detail");
+                setActiveDraftId(null);
                 await refreshTask(taskId, false);
-                await loadTasks();
+                await Promise.all([loadTasks(), loadDrafts()]);
               }}
               onError={(message) => show("error", message)}
             />
