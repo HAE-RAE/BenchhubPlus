@@ -69,14 +69,19 @@ export type TaskDetail = {
   id: string;
   status: TaskSummary["status"];
   createdAt: string;
+  createdAtIso: string;
   completedAt: string;
   stage: string;
   stagePct: number;
+  stageCurrent: number;
+  stageTotal: number;
   errorMessage: string;
+  errorLog: string;
   rows: TaskResultRow[];
   models: Omit<ModelConfig, "api_key">[];
   sampleScale: string;
   labels: string[];
+  draftId: number | null;
 };
 
 export type EvaluationSpec = {

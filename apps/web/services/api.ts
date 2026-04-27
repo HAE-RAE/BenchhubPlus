@@ -224,7 +224,12 @@ export const api = {
     request<{ draft_id: number; task_id: string; status: string; message: string }>(
       `/api/v1/evaluation/drafts/${id}/launch`,
       { method: "POST", body: JSON.stringify({ models }) }
-    )
+    ),
+
+  forkDraft: (id: number) =>
+    request<EvaluationDraft>(`/api/v1/evaluation/drafts/${id}/fork`, {
+      method: "POST"
+    })
 };
 
 export function normalizeStatus(status: unknown): TaskSummary["status"] {
@@ -261,9 +266,10 @@ export function taskDetailFromApi(taskId: string, payload: Record<string, unknow
   const models = Array.isArray(requestPayload.models)
     ? (requestPayload.models as Omit<ModelConfig, "api_key">[])
     : [];
-  const stageTotal = Number(payload.stage_total || 1);
+  const stageCurrent = Math.max(0, Number(payload.stage_current || 0));
+  const stageTotal = Math.max(1, Number(payload.stage_total || 1));
   const stagePct = payload.stage
-    ? Math.round((Number(payload.stage_current || 0) / Math.max(stageTotal, 1)) * 100)
+    ? Math.round((stageCurrent / stageTotal) * 100)
     : status === "completed"
       ? 100
       : status === "running"
@@ -274,10 +280,20 @@ export function taskDetailFromApi(taskId: string, payload: Record<string, unknow
     id: taskId,
     status,
     createdAt: formatDate(payload.created_at),
+    createdAtIso: String(payload.created_at_iso || payload.created_at || ""),
     completedAt: formatDate(payload.completed_at),
     stage: String(payload.stage || (status === "completed" ? "Evaluation complete" : status === "failed" ? "Evaluation failed" : "Queued")),
     stagePct,
+    stageCurrent,
+    stageTotal,
     errorMessage: String(payload.error_message || ""),
+    errorLog: String(payload.error_log || ""),
+    draftId:
+      typeof payload.draft_id === "number"
+        ? payload.draft_id
+        : payload.draft_id != null
+          ? Number(payload.draft_id) || null
+          : null,
     sampleScale: String(requestPayload.sample_scale || ""),
     models,
     labels: [

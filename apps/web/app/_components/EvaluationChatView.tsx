@@ -6,11 +6,13 @@ import {
   Check,
   CheckCircle2,
   Loader2,
+  Lock,
   MessageSquare,
   Plus,
   Send,
   Settings2,
   Sparkles,
+  SquarePen,
   Trash2,
   Trophy
 } from "lucide-react";
@@ -73,13 +75,20 @@ type Props = {
    * round-tripping through the drafts list endpoint on every keystroke.
    */
   onDraftChanged?: (draft: EvaluationDraft | null) => void;
+  /**
+   * Asks the parent to fork the given draft id into a new editable copy and
+   * route the user there. Used when the user opens a launched (locked) thread
+   * and wants to make changes.
+   */
+  onFork?: (sourceDraftId: number) => void | Promise<void>;
 };
 
 export default function EvaluationChatView({
   onLaunched,
   onError,
   activeDraftId,
-  onDraftChanged
+  onDraftChanged,
+  onFork
 }: Props) {
   const [draft, setDraft] = useState<EvaluationDraft | null>(null);
   const [bootError, setBootError] = useState<string | null>(null);
@@ -88,15 +97,30 @@ export default function EvaluationChatView({
   const [models, setModels] = useState<ModelConfig[]>([blankModel(1)]);
   const [launchState, setLaunchState] = useState<LaunchState>("idle");
   const [activePane, setActivePane] = useState<"chat" | "spec">("chat");
+  const [forking, setForking] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchor = useRef<HTMLDivElement | null>(null);
+
+  // Parent callbacks captured in refs. Inline arrow props from the parent are
+  // recreated every render, which would otherwise force every callback that
+  // depends on them to also re-create — that bug was busy-looping ensureDraft
+  // and freezing the panel.
+  const onErrorRef = useRef(onError);
+  const onDraftChangedRef = useRef(onDraftChanged);
+  const onLaunchedRef = useRef(onLaunched);
+  const onForkRef = useRef(onFork);
+  useEffect(() => {
+    onErrorRef.current = onError;
+    onDraftChangedRef.current = onDraftChanged;
+    onLaunchedRef.current = onLaunched;
+    onForkRef.current = onFork;
+  }, [onError, onDraftChanged, onLaunched, onFork]);
 
   // Notify the parent on every draft mutation so History can stack the entry
   // as soon as the conversation starts (rather than waiting for launch).
   useEffect(() => {
-    if (!onDraftChanged) return;
-    onDraftChanged(draft);
-  }, [draft, onDraftChanged]);
+    onDraftChangedRef.current?.(draft);
+  }, [draft]);
 
   const spec = draft?.spec ?? {};
   const messages: ChatMessage[] = useMemo(() => draft?.messages ?? [], [draft]);
@@ -138,9 +162,9 @@ export default function EvaluationChatView({
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Failed to load drafts";
       setBootError(msg);
-      onError(msg);
+      onErrorRef.current?.(msg);
     }
-  }, [activeDraftId, draftId, onError]);
+  }, [activeDraftId, draftId]);
 
   useEffect(() => {
     void ensureDraft();
@@ -182,13 +206,13 @@ export default function EvaluationChatView({
       setDraft(next);
     } catch (error) {
       const msg = error instanceof Error ? error.message : "Send failed";
-      onError(msg);
+      onErrorRef.current?.(msg);
       setDraft(draft);
     } finally {
       setSending(false);
       composerRef.current?.focus();
     }
-  }, [composer, draft, onError, sending]);
+  }, [composer, draft, sending]);
 
   const launch = useCallback(async () => {
     if (!draft || !canLaunch) return;
@@ -199,14 +223,14 @@ export default function EvaluationChatView({
       );
       const result = await api.launchDraft(draft.id, usable);
       setLaunchState("launched");
-      onLaunched(result.task_id);
+      onLaunchedRef.current?.(result.task_id);
     } catch (error) {
       setLaunchState("idle");
       const msg =
         error instanceof ApiError ? error.detail : (error as Error).message;
-      onError(msg || "Launch failed");
+      onErrorRef.current?.(msg || "Launch failed");
     }
-  }, [canLaunch, draft, models, onLaunched]);
+  }, [canLaunch, draft, models]);
 
   const startFreshDraft = useCallback(async () => {
     setLaunchState("idle");
@@ -216,9 +240,23 @@ export default function EvaluationChatView({
       const created = await api.createDraft();
       setDraft(created);
     } catch (error) {
-      onError(error instanceof Error ? error.message : "Could not create a new draft");
+      onErrorRef.current?.(
+        error instanceof Error ? error.message : "Could not create a new draft"
+      );
     }
-  }, [onError]);
+  }, []);
+
+  const isLocked = !!draft && draft.status !== "draft";
+
+  const fork = useCallback(async () => {
+    if (!draft || !onForkRef.current || forking) return;
+    setForking(true);
+    try {
+      await onForkRef.current(draft.id);
+    } finally {
+      setForking(false);
+    }
+  }, [draft, forking]);
 
   if (!draft && !bootError) {
     return (
@@ -242,6 +280,38 @@ export default function EvaluationChatView({
 
   return (
     <section className="flex flex-col gap-4">
+      {isLocked ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-secondary/60 px-4 py-3 text-sm"
+        >
+          <Lock className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              {draft.status === "launched" ? "Thread launched" : "Thread archived"}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {draft.status === "launched" && draft.launched_task_id
+                ? `Linked to task ${draft.launched_task_id.slice(0, 8)}. Fork to make changes and run as a new evaluation.`
+                : "This conversation is read-only. Fork it to keep iterating."}
+            </p>
+          </div>
+          {onFork ? (
+            <Button
+              size="sm"
+              variant="default"
+              type="button"
+              onClick={() => void fork()}
+              disabled={forking}
+            >
+              {forking ? <Loader2 className="animate-spin" /> : <SquarePen />}
+              Edit & fork
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+
       {/* Mobile pane switcher */}
       <div className="flex items-center justify-center md:hidden">
         <div className="inline-flex rounded-lg border border-border bg-card p-1 text-sm">
@@ -281,6 +351,7 @@ export default function EvaluationChatView({
           setComposer={setComposer}
           send={send}
           sending={sending}
+          locked={isLocked}
           composerRef={composerRef}
           scrollAnchor={scrollAnchor}
         />
@@ -312,6 +383,7 @@ function ChatPane({
   setComposer,
   send,
   sending,
+  locked,
   composerRef,
   scrollAnchor
 }: {
@@ -321,6 +393,7 @@ function ChatPane({
   setComposer: (next: string) => void;
   send: () => void;
   sending: boolean;
+  locked: boolean;
   composerRef: React.MutableRefObject<HTMLTextAreaElement | null>;
   scrollAnchor: React.MutableRefObject<HTMLDivElement | null>;
 }) {
@@ -365,7 +438,11 @@ function ChatPane({
           id="eval-composer"
           ref={composerRef}
           rows={2}
-          placeholder="Tell me what you want to evaluate, or ask if it already exists…"
+          placeholder={
+            locked
+              ? "This thread is locked. Fork it to keep editing."
+              : "Tell me what you want to evaluate, or ask if it already exists…"
+          }
           value={composer}
           onChange={(event) => setComposer(event.target.value)}
           onKeyDown={(event) => {
@@ -374,12 +451,13 @@ function ChatPane({
               send();
             }
           }}
+          disabled={locked}
           className="min-h-[44px] resize-none"
         />
         <Button
           type="submit"
           size="icon"
-          disabled={sending || !composer.trim()}
+          disabled={sending || locked || !composer.trim()}
           aria-label="Send message"
         >
           {sending ? <Loader2 className="animate-spin" /> : <Send />}

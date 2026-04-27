@@ -7,7 +7,9 @@ import {
   BarChart3,
   Bot,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
+  ChevronRight,
   CircleAlert,
   Database,
   Github,
@@ -198,6 +200,27 @@ export default function BenchHubApp() {
     setActiveDraftId(draftId);
   }
 
+  async function forkSourceDraft(sourceDraftId: number) {
+    if (!isAuthed) return;
+    setLoading("draft-fork");
+    try {
+      const cloned = await api.forkDraft(sourceDraftId);
+      setDrafts((current) => {
+        const next = current.filter((d) => d.id !== cloned.id);
+        return [cloned, ...next];
+      });
+      setSelectedTask(null);
+      setView("evaluation");
+      setEvalStep("input");
+      setActiveDraftId(cloned.id);
+      show("success", "Thread forked. Edit and run as a new evaluation.");
+    } catch (error) {
+      show("error", error instanceof Error ? error.message : "Failed to fork thread");
+    } finally {
+      setLoading(null);
+    }
+  }
+
   async function removeDraft(draftId: number) {
     setDrafts((current) => current.filter((d) => d.id !== draftId));
     if (activeDraftId === draftId) setActiveDraftId(null);
@@ -274,6 +297,12 @@ export default function BenchHubApp() {
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthed, selectedTask?.id, selectedTask?.status]);
+
+  useEffect(() => {
+    if (!isAuthed || view !== "manager") return;
+    void refreshManager();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthed, view]);
 
   async function devLogin() {
     setLoading("auth");
@@ -387,6 +416,20 @@ export default function BenchHubApp() {
       show("success", "Task cancelled");
     } catch (error) {
       show("error", error instanceof Error ? error.message : "Failed to cancel task");
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function restartSelectedTask() {
+    if (!isAuthed || !selectedTask) return;
+    setLoading("task-action");
+    try {
+      await api.patchTask(selectedTask.id, "restart");
+      await refreshTask(selectedTask.id, false);
+      show("success", "Restart requested");
+    } catch (error) {
+      show("error", error instanceof Error ? error.message : "Failed to restart task");
     } finally {
       setLoading(null);
     }
@@ -811,12 +854,21 @@ export default function BenchHubApp() {
               selectedTask={selectedTask}
               refreshTask={refreshTask}
               cancelSelectedTask={cancelSelectedTask}
+              restartSelectedTask={restartSelectedTask}
+              isAdmin={isAdmin}
+              onBackToThread={(draftId) => {
+                setActiveDraftId(draftId);
+                setSelectedTask(null);
+                setEvalStep("input");
+              }}
+              onForkThread={forkSourceDraft}
               setEvalStep={setEvalStep}
             />
           ) : (
             <EvaluationChatView
               activeDraftId={activeDraftId}
               onDraftChanged={handleDraftSync}
+              onFork={forkSourceDraft}
               onLaunched={async (taskId) => {
                 show("success", "Evaluation queued");
                 setEvalStep("detail");
@@ -946,36 +998,81 @@ function EvaluationView(props: {
   selectedTask: TaskDetail | null;
   refreshTask: (taskId: string) => Promise<void>;
   cancelSelectedTask: () => Promise<void>;
+  restartSelectedTask: () => Promise<void>;
+  isAdmin: boolean;
+  onBackToThread: (draftId: number | null) => void;
+  onForkThread: (draftId: number) => void | Promise<void>;
   setEvalStep: (step: EvalStep) => void;
 }) {
-  // The "input" / "configure" steps were replaced by the conversational
-  // EvaluationChatView. Only the detail screen still routes through here
-  // (when a launched task is being inspected).
+  const draftId = props.selectedTask?.draftId ?? null;
   return (
     <TaskDetailPanel
       task={props.selectedTask}
       loading={props.loading}
       refreshTask={props.refreshTask}
       cancelSelectedTask={props.cancelSelectedTask}
-      back={() => props.setEvalStep("input")}
+      restartSelectedTask={props.restartSelectedTask}
+      isAdmin={props.isAdmin}
+      onForkThread={props.onForkThread}
+      back={() =>
+        draftId != null ? props.onBackToThread(draftId) : props.setEvalStep("input")
+      }
     />
   );
 }
 
+
+const STUCK_PENDING_THRESHOLD_MS = 60_000;
+
+function parseTaskCreatedAt(task: TaskDetail): number | null {
+  const raw = task.createdAtIso || task.createdAt;
+  if (!raw) return null;
+  let normalized = raw.trim();
+  if (!normalized) return null;
+  if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(normalized)) {
+    normalized = `${normalized.replace(" ", "T")}Z`;
+  }
+  const millis = Date.parse(normalized);
+  return Number.isFinite(millis) ? millis : null;
+}
+
+function formatElapsed(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1_000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return `${minutes}m ${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
 
 function TaskDetailPanel({
   task,
   loading,
   refreshTask,
   cancelSelectedTask,
+  restartSelectedTask,
+  isAdmin,
+  onForkThread,
   back
 }: {
   task: TaskDetail | null;
   loading: string | null;
   refreshTask: (taskId: string) => Promise<void>;
   cancelSelectedTask: () => Promise<void>;
+  restartSelectedTask: () => Promise<void>;
+  isAdmin: boolean;
+  onForkThread: (draftId: number) => void | Promise<void>;
   back: () => void;
 }) {
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (task?.status !== "pending") return;
+    const id = window.setInterval(() => setNow(Date.now()), 1_000);
+    return () => window.clearInterval(id);
+  }, [task?.status]);
+
   if (!task) {
     return (
       <div className="grid min-h-[40vh] place-items-center" aria-busy>
@@ -990,6 +1087,12 @@ function TaskDetailPanel({
     task.status === "running" ? "accent" : "secondary";
 
   const isInflight = task.status === "running" || task.status === "pending";
+  const canRestart = isAdmin && (task.status === "failed" || task.status === "pending" || task.status === "completed");
+
+  const createdAtMs = parseTaskCreatedAt(task);
+  const pendingForMs = task.status === "pending" && createdAtMs !== null ? Math.max(0, now - createdAtMs) : 0;
+  const isStuck = task.status === "pending" && pendingForMs >= STUCK_PENDING_THRESHOLD_MS;
+  const stuckLabel = formatElapsed(pendingForMs);
 
   return (
     <div className="space-y-6">
@@ -997,7 +1100,7 @@ function TaskDetailPanel({
         <div className="flex items-start gap-3">
           <Button variant="ghost" size="sm" onClick={back}>
             <ChevronLeft />
-            Evaluations
+            {task.draftId != null ? "Thread" : "Evaluations"}
           </Button>
           <div>
             <p className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
@@ -1011,6 +1114,24 @@ function TaskDetailPanel({
             {loading === "task" ? <Loader2 className="animate-spin" /> : <RefreshCw />}
             Refresh
           </Button>
+          {task.draftId != null ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void onForkThread(task.draftId as number)}
+              disabled={loading === "draft-fork"}
+              title="Clone this thread into a new editable draft"
+            >
+              {loading === "draft-fork" ? <Loader2 className="animate-spin" /> : <SquarePen />}
+              Edit & fork
+            </Button>
+          ) : null}
+          {canRestart ? (
+            <Button variant="outline" size="sm" onClick={() => void restartSelectedTask()} disabled={loading === "task-action"}>
+              <RotateCcw />
+              Restart
+            </Button>
+          ) : null}
           {isInflight ? (
             <Button variant="destructive" size="sm" onClick={() => void cancelSelectedTask()} disabled={loading === "task-action"}>
               <Pause />
@@ -1022,9 +1143,28 @@ function TaskDetailPanel({
 
       <Card className="p-5 space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <Badge variant={statusTone}>{task.status}</Badge>
-          <span className="font-mono text-xs tabular-nums text-muted-foreground">
-            {task.stagePct}%
+          <div className="flex items-center gap-2">
+            <Badge variant={statusTone}>{task.status}</Badge>
+            {task.status === "pending" && createdAtMs !== null ? (
+              <span
+                className={clsx(
+                  "font-mono text-[11px] tabular-nums",
+                  isStuck ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"
+                )}
+                title={`Queued ${stuckLabel} ago`}
+                aria-live="polite"
+              >
+                queued {stuckLabel}
+              </span>
+            ) : null}
+          </div>
+          <span className="flex items-center gap-2 font-mono text-xs tabular-nums text-muted-foreground">
+            {isInflight && task.stageTotal > 1 ? (
+              <span aria-label="Sample progress">
+                {task.stageCurrent.toLocaleString()}/{task.stageTotal.toLocaleString()}
+              </span>
+            ) : null}
+            <span>{task.stagePct}%</span>
           </span>
         </div>
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
@@ -1046,7 +1186,55 @@ function TaskDetailPanel({
         </div>
       </Card>
 
-      {task.errorMessage ? <Banner tone="error" text={task.errorMessage} /> : null}
+      {isStuck ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200"
+        >
+          <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-medium">Still queued after {stuckLabel}.</p>
+            <p className="text-xs text-amber-900/80 dark:text-amber-200/80">
+              The evaluation worker may be offline. Try Restart, or ask an admin to bring the worker back up.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
+      {task.status === "failed" && (task.errorMessage || task.errorLog) ? (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 text-destructive"
+        >
+          <div className="flex items-start gap-3 px-4 py-3">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            <div className="min-w-0 flex-1 space-y-1">
+              <p className="text-sm font-medium">Evaluation failed</p>
+              <p className="break-words text-sm">
+                {task.errorMessage || "No error message was recorded."}
+              </p>
+              {task.errorLog ? (
+                <button
+                  type="button"
+                  onClick={() => setShowErrorDetails((v) => !v)}
+                  className="inline-flex items-center gap-1 text-xs font-medium underline-offset-2 hover:underline"
+                  aria-expanded={showErrorDetails}
+                >
+                  {showErrorDetails ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+                  {showErrorDetails ? "Hide details" : "Show details"}
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {showErrorDetails && task.errorLog ? (
+            <pre className="max-h-72 overflow-auto border-t border-destructive/20 bg-destructive/5 px-4 py-3 font-mono text-[11px] leading-relaxed text-destructive/90 whitespace-pre-wrap break-words">
+              {task.errorLog}
+            </pre>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
         <Card className="overflow-hidden">
