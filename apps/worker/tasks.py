@@ -2,7 +2,9 @@
 
 import json
 import logging
+import re
 import time
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
@@ -19,6 +21,139 @@ from ..core.db import SessionLocal, ExperimentSample, EvaluationTask
 from ..backend.repositories.tasks_repo import TasksRepository
 
 logger = logging.getLogger(__name__)
+
+
+# Loggers that HRET / llm_eval emit progress messages on. Attach a single
+# handler to each so we can translate noisy library logs into structured
+# Celery PROGRESS updates the SPA can render.
+_HRET_PROGRESS_LOGGERS = (
+    "runner",
+    "openai_backend",
+    "string_match",
+    "benchhub_dataset",
+    "llm_eval.evaluator",
+)
+
+
+class _HretProgressHandler(logging.Handler):
+    """Translate HRET log lines into Celery PROGRESS updates.
+
+    HRET is a black-box pipeline with no progress callback. The cleanest
+    way to surface meaningful per-sample progress to the UI is to listen
+    to the library's own log messages and republish them as task state
+    transitions.
+    """
+
+    _PATTERNS = (
+        (
+            re.compile(r"Total samples in '[^']+' split:\s*(\d+)"),
+            "scanning",
+            "Scanning dataset ({n:,} candidates)",
+        ),
+        (
+            re.compile(r"Finished loading\. Total HRET formatted samples:\s*(\d+)"),
+            "filtered",
+            "Filtered to {n:,} matching samples",
+        ),
+        (
+            re.compile(r"Applied sample_size=\d+\. Final sample count:\s*(\d+)"),
+            "ready",
+            "Selected {n} samples for evaluation",
+        ),
+        (
+            re.compile(r"Starting batch generation for\s*(\d+) items"),
+            "inferring",
+            "Generating model outputs (0/{n})",
+        ),
+        (
+            re.compile(r"Batch generation completed"),
+            "inferred",
+            "Generation complete",
+        ),
+        (
+            re.compile(r"Inference completed for\s*(\d+) items"),
+            "inferred",
+            "Generation complete ({n}/{n})",
+        ),
+        (
+            re.compile(r"Starting evaluation with '([^']+)'"),
+            "scoring",
+            "Scoring outputs",
+        ),
+        (
+            re.compile(r"Pipeline run completed in\s*([\d.]+)\s*seconds"),
+            "scored",
+            "Evaluation pipeline complete",
+        ),
+    )
+
+    def __init__(self, total_samples: int) -> None:
+        super().__init__(level=logging.INFO)
+        self.total_samples = max(int(total_samples or 0), 0)
+        self.current = 0
+        self.stage_key = "starting"
+        self._last_status: Optional[str] = None
+
+    def emit(self, record: logging.LogRecord) -> None:  # noqa: D401
+        try:
+            message = record.getMessage()
+        except Exception:
+            return
+
+        for pattern, key, template in self._PATTERNS:
+            match = pattern.search(message)
+            if not match:
+                continue
+
+            value = int(match.group(1)) if match.groups() and match.group(1).isdigit() else None
+            status = template.format(n=value) if value is not None else template
+
+            if key == "ready" and value:
+                self.total_samples = value
+                self.current = 0
+            elif key == "inferred" and self.total_samples:
+                self.current = self.total_samples
+            elif key == "scored" and self.total_samples:
+                self.current = self.total_samples
+
+            self.stage_key = key
+            self._publish(status)
+            return
+
+    def _publish(self, status: str) -> None:
+        if status == self._last_status:
+            return
+        self._last_status = status
+        try:
+            current_task.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": self.current,
+                    "total": max(self.total_samples, 1),
+                    "status": status,
+                },
+            )
+        except Exception:
+            pass
+
+
+@contextmanager
+def _hret_progress_capture(total_samples: int):
+    """Attach the progress handler to HRET loggers for the duration of the task."""
+    handler = _HretProgressHandler(total_samples)
+    attached: List[logging.Logger] = []
+    for name in _HRET_PROGRESS_LOGGERS:
+        log = logging.getLogger(name)
+        log.addHandler(handler)
+        attached.append(log)
+    try:
+        yield handler
+    finally:
+        for log in attached:
+            try:
+                log.removeHandler(handler)
+            except Exception:
+                pass
 
 
 @celery_app.task(bind=True, name="apps.worker.tasks.run_evaluation")
@@ -40,14 +175,24 @@ def run_evaluation(self, task_id: str, plan_details: str) -> Dict[str, Any]:
         plan_yaml = plan_data.get("plan_yaml", "")
         credential_service = CredentialService(db)
         models = credential_service.hydrate_models(plan_data.get("models", []))
+        # Commit so SQLite write lock is released before the long-running
+        # evaluation phase; otherwise the storage manager (separate session)
+        # would block on an open transaction held by this session.
+        db.commit()
         
         if not plan_yaml or not models:
             raise ValueError("Invalid plan data: missing plan_yaml or models")
-        
-        # Update task progress
+
+        sample_size = 0
+        try:
+            sample_size = int(plan_data.get("config", {}).get("sample_size", 0))
+        except (TypeError, ValueError):
+            sample_size = 0
+        progress_total = max(sample_size, 1)
+
         current_task.update_state(
             state="PROGRESS",
-            meta={"current": 0, "total": len(models), "status": "Initializing HRET runner"}
+            meta={"current": 0, "total": progress_total, "status": "Initializing evaluation runner"},
         )
         
         # Create HRET runner and execute evaluation
@@ -57,19 +202,24 @@ def run_evaluation(self, task_id: str, plan_details: str) -> Dict[str, Any]:
         if not hret_runner.validate_plan(plan_yaml):
             raise ValueError("Invalid HRET plan configuration")
         
-        # Update progress
         current_task.update_state(
             state="PROGRESS",
-            meta={"current": 1, "total": len(models), "status": "Running evaluation"}
+            meta={"current": 0, "total": progress_total, "status": "Loading dataset"},
         )
-        
-        # Run evaluation
-        results, raw_results = hret_runner.run_evaluation(plan_yaml, models)
-        
-        # Update progress
+
+        # Run evaluation. The progress capture context attaches a logging
+        # handler to HRET's internal loggers so per-sample milestones are
+        # republished to Celery state for the SPA.
+        with _hret_progress_capture(sample_size):
+            results, raw_results = hret_runner.run_evaluation(plan_yaml, models)
+
         current_task.update_state(
             state="PROGRESS",
-            meta={"current": len(models), "total": len(models), "status": "Processing results"}
+            meta={
+                "current": progress_total,
+                "total": progress_total,
+                "status": "Processing results",
+            },
         )
         
         mapper = HRETResultMapper()
@@ -91,6 +241,14 @@ def run_evaluation(self, task_id: str, plan_details: str) -> Dict[str, Any]:
 
         storage_stats = None
         if mapped_model_results or mapped_sample_results:
+            current_task.update_state(
+                state="PROGRESS",
+                meta={
+                    "current": progress_total,
+                    "total": progress_total,
+                    "status": f"Storing {len(mapped_sample_results)} samples",
+                },
+            )
             storage_manager = HRETStorageManager()
             storage_stats = storage_manager.store_evaluation_results(
                 model_results=mapped_model_results,

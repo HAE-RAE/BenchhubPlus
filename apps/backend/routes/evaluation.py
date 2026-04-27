@@ -195,6 +195,47 @@ async def delete_draft(
     return None
 
 
+@router.post("/drafts/{draft_id}/fork", status_code=status.HTTP_201_CREATED)
+async def fork_draft(
+    draft_id: int = Path(..., ge=1),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Clone an existing (often launched) draft into a fresh editable one.
+
+    The original is preserved so the launched task keeps its provenance trail
+    while the user iterates on a copy. The clone always belongs to the caller
+    even when an admin forks someone else's thread.
+    """
+    source = _get_owned_draft(db, draft_id, current_user)
+    spec = _load_json(source.spec, {}) or {}
+    messages = _load_json(source.messages, []) or []
+
+    base_title = (source.title or "").strip() or _derive_title(spec, messages)
+    forked_title = f"{base_title} (edited)" if base_title else "Edited draft"
+
+    clone = EvaluationDraft(
+        user_id=current_user.id,
+        title=forked_title[:120],
+        spec=json.dumps(spec, ensure_ascii=False),
+        messages=_store_messages(messages),
+        status="draft",
+    )
+    db.add(clone)
+    db.commit()
+    db.refresh(clone)
+
+    AuditService(db).log_action(
+        action="evaluation.draft.fork",
+        resource="evaluation_draft",
+        resource_id=str(clone.id),
+        user_id=current_user.id,
+        metadata={"source_draft_id": source.id, "source_status": source.status},
+    )
+
+    return _serialize(clone)
+
+
 @router.post("/drafts/{draft_id}/messages")
 async def append_message(
     payload: ChatMessageIn,

@@ -72,6 +72,11 @@ class EvaluationOrchestrator:
                     plan_metadata,
                     stored_credentials
                 )
+                plan_metadata = self._apply_user_scale_override(
+                    plan_metadata,
+                    secure_models,
+                    query.sample_size,
+                )
                 plan_details = json.dumps(plan_metadata)
             else:
                 # Fallback: create basic plan without LLM
@@ -419,6 +424,57 @@ class EvaluationOrchestrator:
             language="English",
             sample_size=100
         )
+
+    def _apply_user_scale_override(
+        self,
+        plan_metadata: Dict[str, Any],
+        secure_models: List[ModelInfo],
+        requested_sample_size: int,
+    ) -> Dict[str, Any]:
+        """Override planner-chosen sample_size with the user's explicit scale.
+
+        The chat planner's LLM often picks a default of 100, ignoring the
+        user-selected sample_scale. Force the requested size into both the
+        config dict and the regenerated plan_yaml so the worker actually
+        evaluates the requested number of samples.
+        """
+        if requested_sample_size <= 0:
+            return plan_metadata
+
+        config = plan_metadata.get("config")
+        if not isinstance(config, dict):
+            return plan_metadata
+
+        try:
+            current = int(config.get("sample_size", 0))
+        except (TypeError, ValueError):
+            current = 0
+
+        if current == requested_sample_size:
+            return plan_metadata
+
+        try:
+            plan_config = PlanConfig(**{**config, "sample_size": requested_sample_size})
+        except Exception as exc:
+            logger.warning(
+                "Could not coerce plan config to honor sample_scale=%s: %s",
+                requested_sample_size,
+                exc,
+            )
+            return plan_metadata
+
+        plan_metadata["config"] = plan_config.dict()
+        try:
+            plan_metadata["plan_yaml"] = build_plan_yaml(plan_config, secure_models)
+        except Exception as exc:
+            logger.warning("Failed to rebuild plan_yaml after scale override: %s", exc)
+        plan_metadata["sample_size_overridden"] = True
+        logger.info(
+            "Overrode planner sample_size %s -> %s from user sample_scale",
+            current,
+            requested_sample_size,
+        )
+        return plan_metadata
 
     # Maps Planner Agent shorthand values to actual DB values
     _LANGUAGE_NORMALIZE: Dict[str, str] = {

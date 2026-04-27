@@ -48,9 +48,27 @@ def _is_pgbouncer_url(url: str) -> bool:
 if settings.is_sqlite:
     engine = create_engine(
         settings.database_url,
-        connect_args={"check_same_thread": False},
+        connect_args={"check_same_thread": False, "timeout": 30},
         echo=settings.debug,
     )
+
+    # SQLite serializes writes via a single global lock. Without WAL mode and
+    # a generous busy_timeout, concurrent Celery workers (prefork pool) hit
+    # "database is locked" the moment two of them try to update task status
+    # at once — and our task wrappers crash with PendingRollbackError before
+    # they can even surface a real failure to the user.
+    from sqlalchemy import event
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA foreign_keys=ON")
+        finally:
+            cursor.close()
 elif _is_pgbouncer_url(settings.database_url):
     # Supabase transaction pooler: pgbouncer in transaction mode does NOT
     # preserve session state across queries, so we disable client-side

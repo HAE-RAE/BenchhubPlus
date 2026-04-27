@@ -12,7 +12,7 @@ from sqlalchemy import text
 from pydantic import BaseModel, Field, validator
 from celery import states
 
-from ...core.db import User, get_db
+from ...core.db import EvaluationDraft, User, get_db
 from ...core.schemas import (
     TaskStatus,
     HealthResponse,
@@ -183,6 +183,29 @@ async def get_task_status(
         if task.error_message:
             result["error_message"] = task.error_message
 
+        if task.error_log:
+            result["error_log"] = task.error_log
+
+        if task.created_at is not None:
+            try:
+                result["created_at_iso"] = task.created_at.isoformat()
+            except AttributeError:
+                result["created_at_iso"] = str(task.created_at)
+
+        # Surface the originating chat draft so the SPA can route "Open thread"
+        # back to the conversation that produced this task.
+        try:
+            originating = (
+                db.query(EvaluationDraft.id)
+                .filter(EvaluationDraft.launched_task_id == task.task_id)
+                .order_by(EvaluationDraft.id.desc())
+                .first()
+            )
+            if originating is not None:
+                result["draft_id"] = originating[0]
+        except Exception:
+            pass
+
         # Include request_payload for model configs + sample scale (strip api_key)
         if task.request_payload:
             try:
@@ -256,6 +279,33 @@ async def control_task(
         elif action == "restart":
             if not task.plan_details:
                 raise HTTPException(status_code=400, detail="Task missing plan details for restart")
+            # Re-apply the user's requested sample_scale before restart.
+            # Older tasks were planned before the orchestrator's override
+            # existed, so their stored plan often pins planner_default=100;
+            # restarting verbatim would silently ignore the user's choice.
+            plan_details = task.plan_details
+            try:
+                stored_payload = json.loads(task.request_payload or "{}")
+                requested_scale = stored_payload.get("sample_scale")
+                if requested_scale:
+                    from ...core.schemas import resolve_sample_size, ModelInfo
+                    requested_size = resolve_sample_size(requested_scale)
+                    plan_metadata = json.loads(plan_details)
+                    config = plan_metadata.get("config") or {}
+                    if int(config.get("sample_size", 0)) != requested_size:
+                        raw_models = stored_payload.get("models") or []
+                        rebuild_models = [ModelInfo(**m) for m in raw_models] if raw_models else []
+                        orchestrator = EvaluationOrchestrator(db)
+                        plan_metadata = orchestrator._apply_user_scale_override(
+                            plan_metadata,
+                            rebuild_models,
+                            requested_size,
+                        )
+                        plan_details = json.dumps(plan_metadata)
+            except Exception:
+                logger.exception("Failed to refresh plan sample_size before restart")
+
+            task.plan_details = plan_details
             task.status = "PENDING"
             task.completed_at = None
             task.error_message = None
@@ -263,7 +313,10 @@ async def control_task(
             task.result = None
             db.commit()
             try:
-                run_evaluation.delay(task.task_id, task.plan_details)
+                run_evaluation.apply_async(
+                    args=[task.task_id, plan_details],
+                    task_id=task.task_id,
+                )
             except Exception as dispatch_error:
                 repo.update_task_status(
                     task.task_id,

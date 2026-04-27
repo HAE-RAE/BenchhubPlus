@@ -4,6 +4,7 @@ import logging
 from urllib.parse import urlparse
 
 from celery import Celery
+from kombu import Queue
 
 from ..core.config import get_settings
 
@@ -60,11 +61,20 @@ celery_app.conf.update(
     task_reject_on_worker_lost=True,
 )
 
-# Task routing
+# Task routing. The matching queues are also declared in ``task_queues`` so a
+# worker started without an explicit ``-Q`` flag still subscribes to every
+# routed destination — otherwise messages silently pile up on a queue nobody
+# is listening to.
 celery_app.conf.task_routes = {
     "apps.worker.tasks.run_evaluation": {"queue": "evaluation"},
     "apps.worker.tasks.cleanup_task": {"queue": "maintenance"},
 }
+celery_app.conf.task_queues = (
+    Queue("celery"),
+    Queue("evaluation"),
+    Queue("maintenance"),
+)
+celery_app.conf.task_default_queue = "celery"
 
 # Configure logging
 celery_app.conf.worker_log_format = "[%(asctime)s: %(levelname)s/%(processName)s] %(message)s"
