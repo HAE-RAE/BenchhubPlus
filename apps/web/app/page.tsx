@@ -75,6 +75,14 @@ function scoreLabel(score: number) {
   return Number.isFinite(score) ? score.toFixed(2) : "-";
 }
 
+// Dev login is gated behind a build-time check. Production bundles ship
+// without the form so no one is tempted by it; the backend also refuses the
+// route unless DEBUG=true. Set NEXT_PUBLIC_ENABLE_DEV_ACCESS=1 to force it
+// on for staging-style preview builds.
+const SHOW_DEV_ACCESS =
+  process.env.NODE_ENV !== "production" ||
+  process.env.NEXT_PUBLIC_ENABLE_DEV_ACCESS === "1";
+
 export default function BenchHubApp() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
@@ -600,38 +608,42 @@ export default function BenchHubApp() {
               Continue with Google
             </a>
 
-            <div className="relative my-1 text-center text-xs text-muted-foreground">
-              <span className="bg-background px-2 relative z-10">or use dev access</span>
-              <span className="absolute left-0 right-0 top-1/2 -z-0 h-px -translate-y-1/2 bg-border" />
-            </div>
+            {SHOW_DEV_ACCESS ? (
+              <>
+                <div className="relative my-1 text-center text-xs text-muted-foreground">
+                  <span className="bg-background px-2 relative z-10">or use dev access</span>
+                  <span className="absolute left-0 right-0 top-1/2 -z-0 h-px -translate-y-1/2 bg-border" />
+                </div>
 
-            <div className="flex gap-2">
-              <label className="sr-only" htmlFor="dev-email">
-                Development email
-              </label>
-              <input
-                id="dev-email"
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                placeholder="dev@local"
-                value={devEmail}
-                onChange={(event) => setDevEmail(event.target.value)}
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-              <button
-                type="submit"
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-secondary disabled:pointer-events-none disabled:opacity-50"
-                disabled={loading === "auth" || !devEmail.trim()}
-              >
-                {loading === "auth" ? (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                ) : (
-                  <Github size={16} aria-hidden="true" />
-                )}
-                Dev
-              </button>
-            </div>
+                <div className="flex gap-2">
+                  <label className="sr-only" htmlFor="dev-email">
+                    Development email
+                  </label>
+                  <input
+                    id="dev-email"
+                    type="email"
+                    inputMode="email"
+                    autoComplete="email"
+                    placeholder="dev@local"
+                    value={devEmail}
+                    onChange={(event) => setDevEmail(event.target.value)}
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  />
+                  <button
+                    type="submit"
+                    className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-input bg-background px-4 text-sm font-medium shadow-sm transition-colors hover:bg-secondary disabled:pointer-events-none disabled:opacity-50"
+                    disabled={loading === "auth" || !devEmail.trim()}
+                  >
+                    {loading === "auth" ? (
+                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Github size={16} aria-hidden="true" />
+                    )}
+                    Dev
+                  </button>
+                </div>
+              </>
+            ) : null}
           </form>
           {authError ? (
             <p
