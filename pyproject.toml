@@ -83,6 +83,11 @@ worker = [
     "spacy>=3.4.0",
     "math-verify>=0.1.0",
     "openai>=1.0.0,<1.100.0",
+    # Pillow — HRET's huggingface_backend.py uses `Image.Image` at class
+    # definition time with a try/except import, which crashes the whole
+    # module when PIL isn't installed. transformers[vision] would pull it
+    # in but core transformers doesn't, so we add it explicitly.
+    "Pillow>=10.0.0",
 ]
 gpu = [
     "vllm>=0.4.0",
