@@ -52,9 +52,10 @@ AutoModel.from_pretrained(model, revision=revision) if model else None; \
 
 # Copy application code
 COPY apps/ ./apps/
-COPY logs/ ./logs/
 
-# Create logs directory
+# Create logs directory (we don't track an empty logs/ in git, so mkdir
+# is the source of truth — keeps the image building on hosted CIs like
+# Railway/Vercel that don't ship the directory).
 RUN mkdir -p logs
 
 # Health check for worker
