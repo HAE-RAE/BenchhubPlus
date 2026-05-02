@@ -65,10 +65,14 @@ dependencies = [
 # the FastAPI image must stay slim to fit Railway / Fly image registries
 # (Postgres-bound torch + CUDA wheels balloon the layer past 5 GB).
 #
-# We deliberately split:
-#   [worker]   = CPU inference + HRET runner. Installs cleanly on x86_64
-#                Linux + ARM Mac dev machines.
-#   [gpu]      = vllm — needs CUDA, only valid on GPU hosts.
+# Notes:
+#   * `[worker]` mirrors HRET's runtime deps EXCEPT vllm, which HRET lists
+#     in its core dependencies but is only required for the vllm-backend
+#     evaluation path. We rely on the transformers / accelerate path on
+#     CPU hosts. The Docker image installs `haerae-evaluation-toolkit`
+#     itself with `--no-deps` so vllm + its CUDA chain stays out.
+#   * `[gpu]` adds vllm explicitly for nodes that have CUDA — opt-in via
+#     INSTALL_GPU_EXTRAS=1 build arg.
 worker = [
     "litellm>=1.75.0",
     "transformers>=4.20.0",
@@ -76,10 +80,13 @@ worker = [
     "datasets>=3.2.0",
     "accelerate>=0.20.0",
     "scikit-learn>=1.1.0",
-    "haerae-evaluation-toolkit @ git+https://github.com/HAE-RAE/haerae-evaluation-toolkit.git",
+    "spacy>=3.4.0",
+    "math-verify>=0.1.0",
+    "openai>=1.0.0,<1.100.0",
 ]
 gpu = [
     "vllm>=0.4.0",
+    "haerae-evaluation-toolkit @ git+https://github.com/HAE-RAE/haerae-evaluation-toolkit.git",
 ]
 viz = [
     "plotly>=5.17.0",
