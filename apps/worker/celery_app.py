@@ -12,25 +12,52 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+# Hostnames that resolve only inside the deployment's private network and
+# therefore have the same security posture as localhost. Anyone on these
+# networks already has shell on a sibling container, so requiring an extra
+# in-URL password adds no real protection.
+_PRIVATE_BROKER_SUFFIXES = (
+    ".railway.internal",
+    ".internal.railway.app",
+    ".flycast",
+    ".internal",  # Fly.io / generic compose-net suffix
+    ".svc.cluster.local",  # Kubernetes
+)
+
+_PRIVATE_BROKER_HOSTS = {"localhost", "127.0.0.1", "redis", "rabbitmq"}
+
+
 def _broker_has_auth(url: str) -> bool:
-    """Return True if the broker URL embeds credentials or uses TLS."""
+    """Return True if the broker URL embeds credentials, uses TLS, or
+    resolves to a host we treat as trusted-private."""
     if not url:
         return False
     parsed = urlparse(url)
-    has_password = bool(parsed.password)
-    is_tls = parsed.scheme in {"rediss", "amqps"}
-    is_local = parsed.hostname in {"localhost", "127.0.0.1", None}
-    return has_password or is_tls or is_local
+    if parsed.password:
+        return True
+    if parsed.scheme in {"rediss", "amqps"}:
+        return True
+    host = (parsed.hostname or "").lower()
+    if not host:
+        return True  # malformed URL — let Celery surface the real error
+    if host in _PRIVATE_BROKER_HOSTS:
+        return True
+    if any(host.endswith(suffix) for suffix in _PRIVATE_BROKER_SUFFIXES):
+        return True
+    return False
 
 
-# In production, refuse to boot with an unauthenticated remote broker. An
-# unauthenticated Redis reachable from the worker is effectively an RCE
-# primitive (anyone who can enqueue a message runs code on the worker).
+# In production, refuse to boot with an unauthenticated *public* broker. An
+# unauthenticated Redis reachable from the open internet is effectively an
+# RCE primitive (anyone who can enqueue a message runs code on the worker).
 if settings.is_production and not _broker_has_auth(settings.celery_broker_url):
+    parsed = urlparse(settings.celery_broker_url or "")
     raise RuntimeError(
-        "CELERY_BROKER_URL must include credentials (or use rediss://) when "
-        "running outside debug mode. Set a password on Redis and embed it "
-        "in the URL, e.g. redis://:<password>@host:6379/0."
+        "CELERY_BROKER_URL must include credentials, use rediss://, or point "
+        "at a private deployment hostname (e.g. *.railway.internal, "
+        "*.svc.cluster.local) when running outside debug mode. "
+        f"Got scheme={parsed.scheme!r} host={parsed.hostname!r} "
+        f"has_password={bool(parsed.password)}."
     )
 
 # Create Celery application
