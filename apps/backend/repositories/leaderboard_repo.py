@@ -44,7 +44,9 @@ class LeaderboardRepository:
         include_quarantined: bool = False
     ) -> List[LeaderboardCache]:
         """Get leaderboard entries with optional filtering."""
-        query = self.db.query(LeaderboardCache)
+        query = self.db.query(LeaderboardCache).filter(
+            LeaderboardCache.deleted_at.is_(None),
+        )
         
         if language:
             query = query.filter(LeaderboardCache.language == language)
@@ -93,6 +95,7 @@ class LeaderboardRepository:
                 existing.deleted_at = None
             elif quarantined is True:
                 existing.quarantined = True
+                existing.deleted_at = None
 
             entry = existing
         else:
@@ -107,6 +110,19 @@ class LeaderboardRepository:
             )
             self.db.add(entry)
         
+        self.db.commit()
+        self.db.refresh(entry)
+        return entry
+
+    def approve_entry(self, entry_id: int) -> Optional[LeaderboardCache]:
+        """Approve a hidden/pending leaderboard entry for public display."""
+        entry = self.get_by_id(entry_id)
+        if not entry:
+            return None
+
+        entry.quarantined = False
+        entry.deleted_at = None
+        entry.last_updated = datetime.utcnow()
         self.db.commit()
         self.db.refresh(entry)
         return entry

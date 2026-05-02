@@ -522,6 +522,20 @@ export default function BenchHubApp() {
     }
   }
 
+  async function approveLeaderboardEntry(entryId?: number) {
+    if (!isAuthed || !entryId) return;
+    setLoading("manager");
+    try {
+      await api.approveLeaderboardEntry(entryId);
+      await refreshManager();
+      show("success", "Leaderboard entry approved");
+    } catch (error) {
+      show("error", error instanceof Error ? error.message : "Failed to approve entry");
+    } finally {
+      setLoading(null);
+    }
+  }
+
   function newEvaluation() {
     setView("evaluation");
     setEvalStep("input");
@@ -906,6 +920,7 @@ export default function BenchHubApp() {
             setEntry={setNewEntry}
             addEntry={addLeaderboardEntry}
             removeEntry={removeLeaderboardEntry}
+            approveEntry={approveLeaderboardEntry}
           />
         ) : null}
         </div>
@@ -1460,6 +1475,7 @@ function ManagerView(props: {
   setEntry: React.Dispatch<React.SetStateAction<{ model: string; language: string; subject: string; taskType: string; score: string }>>;
   addEntry: () => Promise<void>;
   removeEntry: (entryId?: number) => Promise<void>;
+  approveEntry: (entryId?: number) => Promise<void>;
 }) {
   const health = props.snapshot?.health || {};
   const capacity = props.snapshot?.capacity || {};
@@ -1602,6 +1618,7 @@ function ManagerView(props: {
                 <th className="hidden px-4 py-2.5 text-left font-medium md:table-cell">Subject</th>
                 <th className="hidden px-4 py-2.5 text-left font-medium md:table-cell">Task</th>
                 <th className="px-4 py-2.5 text-right font-medium">Score</th>
+                <th className="hidden px-4 py-2.5 text-left font-medium md:table-cell">Visibility</th>
                 <th className="px-4 py-2.5" />
               </tr>
             </thead>
@@ -1613,15 +1630,27 @@ function ManagerView(props: {
                   <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">{entry.subject_type}</td>
                   <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">{entry.task_type}</td>
                   <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{scoreLabel(entry.score)}</td>
+                  <td className="hidden px-4 py-2.5 md:table-cell">
+                    <Badge variant={entry.quarantined ? "secondary" : "success"}>
+                      {entry.quarantined ? "Pending approval" : "Public"}
+                    </Badge>
+                  </td>
                   <td className="px-4 py-2.5 text-right">
-                    <Button variant="ghost" size="icon" title="Remove entry" onClick={() => void props.removeEntry(entry.id)}>
-                      <Trash2 className="size-3.5" />
-                    </Button>
+                    <div className="flex items-center justify-end gap-1">
+                      {entry.quarantined ? (
+                        <Button variant="ghost" size="icon" title="Approve entry" onClick={() => void props.approveEntry(entry.id)}>
+                          <CheckCircle2 className="size-3.5" />
+                        </Button>
+                      ) : null}
+                      <Button variant="ghost" size="icon" title="Remove entry" onClick={() => void props.removeEntry(entry.id)}>
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-sm text-muted-foreground">No leaderboard snapshot</td>
+                  <td colSpan={7} className="px-4 py-10 text-center text-sm text-muted-foreground">No leaderboard snapshot</td>
                 </tr>
               )}
             </tbody>

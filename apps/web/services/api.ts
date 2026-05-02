@@ -200,6 +200,9 @@ export const api = {
   deleteLeaderboardEntry: (entryId: number) =>
     request<{ message: string }>(`/api/v1/leaderboard/entries/${entryId}`, { method: "DELETE" }),
 
+  approveLeaderboardEntry: (entryId: number) =>
+    request<LeaderboardEntry>(`/api/v1/leaderboard/entries/${entryId}/approve`, { method: "POST" }),
+
   // ----- conversational evaluation drafts -----
 
   createDraft: () =>

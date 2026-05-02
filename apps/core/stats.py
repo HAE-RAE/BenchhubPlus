@@ -52,6 +52,11 @@ def get_leaderboard_data(
         query = query.filter(LeaderboardCache.subject_type == subject_type)
     if task_type:
         query = query.filter(LeaderboardCache.task_type == task_type)
+
+    query = query.filter(
+        LeaderboardCache.quarantined.is_(False),
+        LeaderboardCache.deleted_at.is_(None),
+    )
     
     results = query.order_by(LeaderboardCache.score.desc()).limit(limit).all()
     
@@ -88,6 +93,8 @@ def update_leaderboard_cache(
     if existing:
         existing.score = score
         existing.last_updated = datetime.utcnow()
+        existing.quarantined = True
+        existing.deleted_at = None
     else:
         new_entry = LeaderboardCache(
             model_name=model_name,
@@ -95,6 +102,8 @@ def update_leaderboard_cache(
             subject_type=subject_type,
             task_type=task_type,
             score=score,
+            quarantined=True,
+            deleted_at=None,
             last_updated=datetime.utcnow(),
         )
         db.add(new_entry)

@@ -162,10 +162,14 @@ async def get_categories(
         from sqlalchemy import distinct
         from ...core.db import LeaderboardCache
         
-        # Get distinct values for each category
-        languages = db.query(distinct(LeaderboardCache.language)).all()
-        subjects = db.query(distinct(LeaderboardCache.subject_type)).all()
-        tasks = db.query(distinct(LeaderboardCache.task_type)).all()
+        # Public filters should only expose approved global leaderboard rows.
+        visible_rows = db.query(LeaderboardCache).filter(
+            LeaderboardCache.quarantined.is_(False),
+            LeaderboardCache.deleted_at.is_(None),
+        )
+        languages = visible_rows.with_entities(distinct(LeaderboardCache.language)).all()
+        subjects = visible_rows.with_entities(distinct(LeaderboardCache.subject_type)).all()
+        tasks = visible_rows.with_entities(distinct(LeaderboardCache.task_type)).all()
         
         return {
             "languages": [lang[0] for lang in languages],
@@ -237,6 +241,52 @@ async def create_leaderboard_entry(
         )
     except Exception as e:
         logger.error(f"Failed to create leaderboard entry: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post(
+    "/entries/{entry_id}/approve",
+    dependencies=[Depends(require_admin)],
+    response_model=LeaderboardEntry,
+)
+async def approve_leaderboard_entry(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+):
+    """Approve a pending leaderboard entry for public display."""
+    try:
+        repo = LeaderboardRepository(db)
+        entry = repo.approve_entry(entry_id)
+        if not entry:
+            raise HTTPException(status_code=404, detail="Entry not found")
+
+        AuditService(db).log_action(
+            action="leaderboard.approve",
+            resource="leaderboard",
+            resource_id=str(entry_id),
+            user_id=current_user.id,
+            metadata={
+                "model_name": entry.model_name,
+                "language": entry.language,
+                "subject_type": entry.subject_type,
+                "task_type": entry.task_type,
+            },
+        )
+        return LeaderboardEntry(
+            id=entry.id,
+            model_name=entry.model_name,
+            language=entry.language,
+            subject_type=entry.subject_type,
+            task_type=entry.task_type,
+            score=entry.score,
+            last_updated=entry.last_updated,
+            quarantined=entry.quarantined,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to approve leaderboard entry: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

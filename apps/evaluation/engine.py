@@ -371,6 +371,8 @@ class EvaluationEngine:
             if existing:
                 existing.score = score
                 existing.last_updated = datetime.utcnow()
+                existing.quarantined = True
+                existing.deleted_at = None
             else:
                 new_entry = LeaderboardCache(
                     model_name=model_name,
@@ -378,6 +380,8 @@ class EvaluationEngine:
                     subject_type=subject_type,
                     task_type=task_type,
                     score=score,
+                    quarantined=True,
+                    deleted_at=None,
                     last_updated=datetime.utcnow()
                 )
                 self.db.add(new_entry)

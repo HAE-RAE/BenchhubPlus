@@ -114,7 +114,8 @@ class HRETStorageManager:
                 storage_stats["errors"].extend(sample_errors)
             db.commit()
             
-            # Update leaderboard cache
+            # Store leaderboard rows as pending moderation. Public browse/cache
+            # lookups only include rows after an admin approves them.
             leaderboard_updates, leaderboard_errors = self._update_leaderboard_cache(db, model_results)
             storage_stats["leaderboard_entries_updated"] = leaderboard_updates
             storage_stats["leaderboard_errors"] = leaderboard_errors
@@ -262,7 +263,7 @@ class HRETStorageManager:
                     if existing:
                         existing.score = entry["score"]
                         existing.last_updated = entry["last_updated"]
-                        existing.quarantined = False
+                        existing.quarantined = True
                         existing.deleted_at = None
                     else:
                         new_entries.append(LeaderboardCache(**entry))
@@ -295,7 +296,7 @@ class HRETStorageManager:
                     if existing:
                         existing.score = entry["score"]
                         existing.last_updated = entry["last_updated"]
-                        existing.quarantined = False
+                        existing.quarantined = True
                         existing.deleted_at = None
                     else:
                         db.add(LeaderboardCache(**entry))
@@ -331,7 +332,9 @@ class HRETStorageManager:
                     "subject_type": subject_type,
                     "task_type": task_type,
                     "score": model_result.accuracy,
-                    "last_updated": datetime.utcnow()
+                    "last_updated": datetime.utcnow(),
+                    "quarantined": True,
+                    "deleted_at": None,
                 }
                 entries.append(entry)
         

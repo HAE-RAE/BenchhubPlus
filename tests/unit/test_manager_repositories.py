@@ -41,6 +41,36 @@ def test_leaderboard_soft_delete_and_filter(test_db):
     repo.soft_delete(entry.id, quarantine=True)
     hidden = repo.get_leaderboard(language="English", subject_type="Math", task_type="QA")
     assert hidden == []
+    assert repo.get_leaderboard(
+        language="English",
+        subject_type="Math",
+        task_type="QA",
+        include_quarantined=True,
+    ) == []
     stored = repo.get_by_id(entry.id)
     assert stored.quarantined is True
     assert stored.deleted_at is not None
+
+
+def test_leaderboard_pending_entry_requires_approval(test_db):
+    """Automatic evaluation rows stay hidden until an admin approves them."""
+    repo = LeaderboardRepository(test_db)
+    entry = repo.upsert_entry(
+        model_name="submitted-model",
+        language="Korean",
+        subject_type="Science/Math",
+        task_type="Reasoning",
+        score=0.82,
+        quarantined=True,
+    )
+
+    assert entry.quarantined is True
+    assert entry.deleted_at is None
+    assert repo.get_leaderboard(language="Korean", subject_type="Science/Math", task_type="Reasoning") == []
+
+    approved = repo.approve_entry(entry.id)
+
+    assert approved is not None
+    assert approved.quarantined is False
+    visible = repo.get_leaderboard(language="Korean", subject_type="Science/Math", task_type="Reasoning")
+    assert [row.id for row in visible] == [entry.id]

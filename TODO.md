@@ -56,4 +56,53 @@
   - [X] Celery/Redis/DB 상태가 비정상일 때 자동 재시도나 경고 채널(Slack/Webhook 등)을 추가.
 
 ---
-각 항목별로 우선순위(P0/P1 등)와 일정, 담당자를 지정하여 스프린트 계획에 반영하세요.
+
+## 7. SaaS 출시 잔여 작업 (2026-04-25 추가)
+
+이번 라운드에서 backend hardening / Supabase 호환 / 대화형 평가 워크플로 / Resend풍 디자인 시스템 / 다크모드 / Reflex 프론트엔드 제거를 끝냄. 다음 우선순위는 아래.
+
+### 7.1 멀티테넌시 정식화 (P0)
+- [ ] **`ModelCredential` 에 `user_id`/`workspace_id` 컬럼 추가** — 현재 전역 unique hash라 사용자간 자격증명 공유 위험. 마이그레이션 + `credential_service` 변경 필요.  
+  - 임시 방편: `apps/backend/routes/dataset.py:recent_models` 에서 비-admin은 본인 task에서만 모델명 추출하도록 막아둔 상태.
+- [ ] **모든 list 쿼리에 tenant 필터 강제** — `tasks_repo.filter_tasks(user_id=...)` 패턴을 helper로 통합해 누락 방지.
+- [ ] **PostgreSQL Row-Level Security (RLS) 검토** — Supabase로 가는 길이라면 DB 레벨에서도 한 겹 더 막을지 결정. ORM 필터만 둘지 RLS 도 둘지.
+- [ ] **`Organization` / `Workspace` 모델은 있으나 사용자가 멤버를 늘릴 UI/API 없음** — 초대, 역할 변경, 워크스페이스 전환 화면 추가.
+
+### 7.2 운영 강화 (P0)
+- [ ] **의존성 핀 고정** — `pyproject.toml` 의 `>=` 범위 → 정확한 버전 (`==`) 으로 lock. `pip-tools` / `uv lock` 도입 검토. 프론트도 `package-lock.json` 갱신.
+- [ ] **Dependabot / renovate 설정** — CVE 알림 자동화.
+- [ ] **시크릿 로테이션** — `JWT_SECRET_KEY`, `SECRET_KEY` 회전 절차. JWT 회전은 `kid` 헤더 + 키 셋 보관 필요.
+- [ ] **Celery 메시지 서명 (auth serializer)** — 현재는 Redis AUTH + JSON-only로만 차단. PKI 부트스트랩 후 진짜 서명 추가하면 broker 침투 시에도 코드 실행 차단.
+- [ ] **로그 PII redaction** — 이메일 마스킹은 인증 흐름에만 적용됨. 모든 로그 핸들러에 redact 필터 부착.
+- [ ] **종합 audit log** — 현재 task delete/launch만 기록. login/logout/token refresh/credential 접근/admin 권한 부여까지 확장.
+- [ ] **Sentry / OpenTelemetry 연동** — `request_id` 미들웨어는 있으니 외부 트레이서로 흐름 연결.
+
+### 7.3 평가 파이프라인 안정화 (P1)
+- [ ] **`EvaluationDraft` 정리 cron** — `status="abandoned"` 또는 7일 이상 묵은 draft 자동 정리. 현재는 무한 누적.
+- [ ] **OpenAI 비용 캡** — 대화 한 번에 tool calling 4 iter × 700 tokens. user별 일일 토큰 한도 체크.
+- [ ] **Chat planner 휴리스틱 강화** — placeholder 키 환경에서 슬롯 추출 정확도 낮음. 정규식 기반 한국어/영어 키워드 매칭 추가.
+- [ ] **Draft → Task 연결 추적** — 현재 `launched_task_id` 만 저장. 작업 완료 후 draft → result 링크 UI 필요 (chat에 결과 인라인 표시).
+- [ ] **모델 추천 시 가격/지연시간 메타데이터** — `suggested_models` 에 토큰 단가/평균 latency 포함하면 사용자가 RUN 전에 비교 가능.
+
+### 7.4 프론트엔드 추가 폴리시 (P1)
+- [ ] **`page.tsx` 1294줄 컴포넌트 분리** — `<EvaluationView>`, `<LeaderboardView>`, `<ManagerView>`, `<TaskDetailPanel>` 을 별도 파일로. `useAuth()` 훅 추출.
+- [ ] **Toast 시스템** (현재는 자체 Banner) — `sonner` 도입해 알림 스택 / dismiss / undo 액션.
+- [ ] **AbortController 도입** — view 전환 시 진행 중인 fetch 취소. 메모리 누수 + race condition 방어.
+- [ ] **Skeleton 로더** — leaderboard / manager 표 로딩 중 스피너 대신 shadcn `<Skeleton />`.
+- [ ] **Storybook / Visual 테스트** — 디자인 회귀 잡기.
+- [ ] **e2e (Playwright)** — auth → draft chat → launch → detail 플로우 회귀 방지.
+
+### 7.5 문서 정리 (P2)
+- [ ] **README + docs/{eng,kor}/*.md 16개 파일에서 Reflex 언급 제거** — `architecture.md`, `quickstart.md`, `development.md`, `troubleshooting.md`, `docker-deployment.md`, `SETUP_GUIDE.md`, `EXECUTION_LOG.md`, `README.md`. 새 Next.js + shadcn 구조 반영.
+- [ ] **Auth 흐름 다이어그램 갱신** — 쿠키 기반 + Next 리라이트 프록시 반영.
+- [ ] **Supabase 배포 가이드** — `.env.example` 주석으로만 있음. `docs/eng/supabase-deployment.md` 신규.
+- [ ] **API reference 업데이트** — `/api/v1/evaluation/drafts/*` 신규 엔드포인트 5개 문서화.
+
+### 7.6 인프라 / CI (P2)
+- [ ] **GitHub Actions 워크플로** — backend pytest + frontend `tsc --noEmit` + `next build` + ruff/eslint.
+- [ ] **이미지 사이즈 다이어트** — worker 이미지에 `pip install` 시 wheels 캐시. multi-stage build.
+- [ ] **헬스체크 인증** — 현재 `/api/v1/health` 가 db/redis/celery 상태를 노출. 외부 접근 가능하면 정보 누출이라 internal 헬스체크 분리 또는 인증 추가.
+- [ ] **Nginx config 검토** — `nginx.conf` 가 있으나 새 쿠키 / CORS / X-Request-ID 설정과 일치하는지 확인.
+
+---
+각 항목별로 우선순위(P0/P1/P2)와 일정, 담당자를 지정하여 스프린트 계획에 반영하세요.

@@ -641,7 +641,8 @@ class EvaluationOrchestrator:
                             language=language,
                             subject_type=subject,
                             task_type=task_type,
-                            score=float(score)
+                            score=float(score),
+                            quarantined=True,
                         )
                     
                     logger.info(f"Updated cache for {model_name}: {score}")
