@@ -23,48 +23,34 @@ classifiers = [
 ]
 
 dependencies = [
-    # Core dependencies
+    # ---- Web framework ----
     "fastapi>=0.104.0",
     "uvicorn[standard]>=0.24.0",
     "pydantic>=2.4.0",
     "pydantic-settings>=2.0.0",
-    
-    # Database
+
+    # ---- Database ----
     "sqlalchemy>=2.0.0",
     "alembic>=1.12.0",
-    "psycopg2-binary>=2.9.0",  # PostgreSQL support
-    "aiosqlite>=0.19.0",  # SQLite async support
-    
-    # Task Queue
+    "psycopg2-binary>=2.9.0",
+    "aiosqlite>=0.19.0",
+
+    # ---- Task queue ----
     "celery>=5.3.0",
     "redis>=5.0.0",
-    
-    # HTTP Client
+
+    # ---- HTTP / LLM clients (lightweight; no local model weights) ----
     "httpx>=0.25.0",
     "requests>=2.31.0",
-    
-    # LLM Integration (lightweight clients only — heavy local-inference
-    # backends like vllm live in the optional [worker] extra so the API
-    # service can be built on machines without GPU/CUDA toolchains).
     "openai>=1.3.0",
-    "litellm>=1.75.0",
-    "transformers>=4.20.0",
-    "torch>=2.0.0",
-    "datasets>=3.2.0",
-    "accelerate>=0.20.0",
-    
-    # Data Processing
+
+    # ---- Data ingest (parquet seeding) ----
     "pandas>=2.0.0",
     "pyarrow>=14.0.0",
     "numpy>=1.24.0",
     "pyyaml>=6.0.0",
-    
-    # Visualization
-    "plotly>=5.17.0",
-    "altair>=5.1.0",
-    "matplotlib>=3.7.0",
-    
-    # Utilities
+
+    # ---- Auth + utilities ----
     "python-multipart>=0.0.6",
     "python-jose[cryptography]>=3.3.0",
     "passlib[bcrypt]>=1.7.4",
@@ -72,19 +58,33 @@ dependencies = [
     "typer>=0.9.0",
     "tqdm>=4.64.0",
     "langdetect>=1.0.9",
-    "scikit-learn>=1.1.0",
-    "spacy>=3.4.0",
-    
-    # Evaluation - HRET Integration
-    # Note: Using local path for development, change to PyPI when published
-    "haerae-evaluation-toolkit @ git+https://github.com/HAE-RAE/haerae-evaluation-toolkit.git",
 ]
 
 [project.optional-dependencies]
-# Heavy local-inference deps. Install only on machines that actually run
-# evaluations (the worker container, GPU dev hosts).
+# Heavy ML / inference deps. Only the Celery worker container needs these —
+# the FastAPI image must stay slim to fit Railway / Fly image registries
+# (Postgres-bound torch + CUDA wheels balloon the layer past 5 GB).
+#
+# We deliberately split:
+#   [worker]   = CPU inference + HRET runner. Installs cleanly on x86_64
+#                Linux + ARM Mac dev machines.
+#   [gpu]      = vllm — needs CUDA, only valid on GPU hosts.
 worker = [
+    "litellm>=1.75.0",
+    "transformers>=4.20.0",
+    "torch>=2.0.0",
+    "datasets>=3.2.0",
+    "accelerate>=0.20.0",
+    "scikit-learn>=1.1.0",
+    "haerae-evaluation-toolkit @ git+https://github.com/HAE-RAE/haerae-evaluation-toolkit.git",
+]
+gpu = [
     "vllm>=0.4.0",
+]
+viz = [
+    "plotly>=5.17.0",
+    "altair>=5.1.0",
+    "matplotlib>=3.7.0",
 ]
 
 dev = [

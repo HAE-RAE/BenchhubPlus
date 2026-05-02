@@ -22,14 +22,19 @@ RUN apt-get update && apt-get install -y \
 COPY pyproject.toml ./
 COPY README.md ./
 
-# Install Python dependencies. Set INSTALL_WORKER_EXTRAS=1 to also pull
-# heavy local-inference deps (vllm, etc.) — only safe on linux/amd64 with
-# CUDA. Default leaves them out so the image builds on ARM64 dev machines.
-ARG INSTALL_WORKER_EXTRAS=0
-RUN if [ "$INSTALL_WORKER_EXTRAS" = "1" ]; then \
-      pip install --no-cache-dir -e ".[worker]"; \
+# Install CPU-only PyTorch first so the [worker] extras find it already
+# satisfied. Without this, pip pulls the default CUDA wheel (~2 GB of
+# nvidia-* libs) which blows the Railway image registry budget. Set
+# INSTALL_GPU_EXTRAS=1 on a real GPU node to pull vllm + CUDA torch.
+ARG INSTALL_GPU_EXTRAS=0
+RUN if [ "$INSTALL_GPU_EXTRAS" = "1" ]; then \
+      pip install --no-cache-dir -e ".[worker,gpu]"; \
     else \
-      pip install --no-cache-dir -e .; \
+      pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        --extra-index-url https://pypi.org/simple \
+        torch && \
+      pip install --no-cache-dir -e ".[worker]"; \
     fi
 
 # Optional: prefetch model weights for HRET (set build args to enable)
