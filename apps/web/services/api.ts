@@ -124,7 +124,7 @@ export const api = {
 
   // Browser navigates here directly (full page load), so even when API_BASE
   // is empty we hit the rewrite and end up on the backend redirect.
-  googleLoginUrl: () => `${API_BASE || ""}/api/v1/auth/google/login`,
+  githubLoginUrl: () => `${API_BASE || ""}/api/v1/auth/github/login`,
 
   listTasks: (userId?: number) =>
     request<{ tasks: unknown[]; total: number }>("/api/v1/tasks", {

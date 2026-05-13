@@ -10,8 +10,8 @@ import pytest
 # Set required environment variables before importing app settings
 os.environ.setdefault("openai_api_key", "test-openai-key")
 os.environ.setdefault("secret_key", "test-secret-key-with-at-least-32-characters")
-os.environ.setdefault("google_client_id", "test-google-client-id")
-os.environ.setdefault("google_client_secret", "test-google-client-secret")
+os.environ.setdefault("github_client_id", "test-github-client-id")
+os.environ.setdefault("github_client_secret", "test-github-client-secret")
 os.environ.setdefault("jwt_secret_key", "test-jwt-secret-key-with-at-least-32-characters")
 
 from fastapi.testclient import TestClient

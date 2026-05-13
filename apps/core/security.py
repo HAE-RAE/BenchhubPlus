@@ -254,41 +254,59 @@ def _login_memory_limiter(identifier: str, max_requests: int, window_seconds: in
     return len(bucket) <= max_requests
 
 
-async def get_google_user_info(code: str) -> Dict[str, Any]:
-    token_url = "https://oauth2.googleapis.com/token"
+async def get_github_user_info(code: str) -> Dict[str, Any]:
+    token_url = "https://github.com/login/oauth/access_token"
     token_data = {
         "code": code,
-        "client_id": settings.google_client_id,
-        "client_secret": settings.google_client_secret,
-        "redirect_uri": settings.google_redirect_uri,
-        "grant_type": "authorization_code",
+        "client_id": settings.github_client_id,
+        "client_secret": settings.github_client_secret,
+        "redirect_uri": settings.github_redirect_uri,
     }
-    
+
     async with httpx.AsyncClient() as client:
         try:
-            token_response = await client.post(token_url, data=token_data)
+            token_response = await client.post(
+                token_url,
+                data=token_data,
+                headers={"Accept": "application/json"},
+            )
             token_response.raise_for_status()
             token_json = token_response.json()
             access_token = token_json.get("access_token")
-            
+
             if not access_token:
                 raise HTTPException(
                     status_code=400,
-                    detail="Failed to get access token from Google"
+                    detail="Failed to get access token from GitHub",
                 )
-            
-            user_info_url = "https://www.googleapis.com/oauth2/v2/userinfo"
-            headers = {"Authorization": f"Bearer {access_token}"}
-            user_response = await client.get(user_info_url, headers=headers)
+
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+            }
+            user_response = await client.get(
+                "https://api.github.com/user", headers=headers
+            )
             user_response.raise_for_status()
             user_info = user_response.json()
-            
+
+            # GitHub may hide the email; fetch from /user/emails if needed.
+            if not user_info.get("email"):
+                emails_response = await client.get(
+                    "https://api.github.com/user/emails", headers=headers
+                )
+                if emails_response.status_code == 200:
+                    for entry in emails_response.json():
+                        if entry.get("primary") and entry.get("verified"):
+                            user_info["email"] = entry["email"]
+                            break
+
             return user_info
-            
+
         except httpx.HTTPError:
             raise HTTPException(
                 status_code=400,
-                detail="Failed to get user info from Google",
+                detail="Failed to get user info from GitHub",
             )
 
 class RateLimiter:

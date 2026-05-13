@@ -602,10 +602,10 @@ export default function BenchHubApp() {
           >
             <a
               className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              href={api.googleLoginUrl()}
+              href={api.githubLoginUrl()}
             >
-              <LogIn size={16} aria-hidden="true" />
-              Continue with Google
+              <Github size={16} aria-hidden="true" />
+              Continue with GitHub
             </a>
 
             {SHOW_DEV_ACCESS ? (

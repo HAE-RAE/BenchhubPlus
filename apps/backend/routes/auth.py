@@ -14,7 +14,7 @@ from ...core.schemas import ErrorResponse, UserResponse
 from ...core.security import (
     create_jwt_token,
     enforce_login_rate_limit,
-    get_google_user_info,
+    get_github_user_info,
     mask_email,
 )
 from ..dependencies import get_current_user as _get_current_user_dep
@@ -122,54 +122,53 @@ def _set_auth_cookie(response, token: str) -> None:
     )
 
 
-@router.get("/google/login", status_code=status.HTTP_302_FOUND)
-async def google_login():
-    """Redirect to Google OAuth login page."""
+@router.get("/github/login", status_code=status.HTTP_302_FOUND)
+async def github_login():
+    """Redirect to GitHub OAuth login page."""
     if settings.debug or settings.dev_auth_bypass:
-        # Dev-only: skip Google OAuth and use a default dev user.
         redirect_url = f"{settings.frontend_url}?dev_login=true"
         return RedirectResponse(url=redirect_url)
 
-    google_auth_url = (
-        "https://accounts.google.com/o/oauth2/v2/auth?"
-        f"client_id={settings.google_client_id}&"
-        f"redirect_uri={settings.google_redirect_uri}&"
-        "response_type=code&"
-        "scope=openid email profile"
+    github_auth_url = (
+        "https://github.com/login/oauth/authorize?"
+        f"client_id={settings.github_client_id}&"
+        f"redirect_uri={settings.github_redirect_uri}&"
+        "scope=read:user user:email"
     )
-    
-    logger.info("Redirecting to Google OAuth")
-    return RedirectResponse(url=google_auth_url)
+
+    logger.info("Redirecting to GitHub OAuth")
+    return RedirectResponse(url=github_auth_url)
 
 
-@router.get("/google/callback", status_code=status.HTTP_302_FOUND)
-async def google_callback(
+@router.get("/github/callback", status_code=status.HTTP_302_FOUND)
+async def github_callback(
     request: Request,
     code: str,
     db: Session = Depends(get_db),
 ):
-    """Handle Google OAuth callback and authenticate user."""
+    """Handle GitHub OAuth callback and authenticate user."""
     if settings.debug or settings.dev_auth_bypass:
-        raise HTTPException(status_code=400, detail="Google OAuth disabled in dev mode")
+        raise HTTPException(status_code=400, detail="GitHub OAuth disabled in dev mode")
 
     await enforce_login_rate_limit(request, scope="oauth")
 
     try:
-        google_user = await get_google_user_info(code)
-        email = google_user.get("email")
+        github_user = await get_github_user_info(code)
+        email = github_user.get("email")
         if not email:
-            raise HTTPException(status_code=400, detail="Google account is missing an email")
-        logger.info("Google OAuth successful for email: %s", mask_email(email))
+            raise HTTPException(status_code=400, detail="GitHub account is missing a verified email")
+        logger.info("GitHub OAuth successful for email: %s", mask_email(email))
 
+        github_id = str(github_user.get("id", ""))
         user = db.query(User).filter(User.email == email).first()
 
         if not user:
             user = User(
-                google_id=google_user["id"],
+                github_id=github_id,
                 email=email,
-                email_verified=google_user.get("verified_email", False),
-                full_name=google_user.get("name"),
-                picture_url=google_user.get("picture"),
+                email_verified=True,
+                full_name=github_user.get("name") or github_user.get("login"),
+                picture_url=github_user.get("avatar_url"),
                 is_active=True,
                 last_login_at=datetime.now(timezone.utc),
                 role="user",
@@ -181,8 +180,10 @@ async def google_callback(
             logger.info("Created new user id=%s", user.id)
         else:
             user.last_login_at = datetime.now(timezone.utc)
-            user.full_name = google_user.get("name", user.full_name)
-            user.picture_url = google_user.get("picture", user.picture_url)
+            user.full_name = github_user.get("name") or github_user.get("login") or user.full_name
+            user.picture_url = github_user.get("avatar_url", user.picture_url)
+            if github_id and user.github_id != github_id:
+                user.github_id = github_id
             db.commit()
             logger.info("User logged in id=%s", user.id)
 
@@ -190,8 +191,6 @@ async def google_callback(
 
         access_token = create_jwt_token(user.id, user.email)
 
-        # Do not put the token in the redirect URL — leaks via referer/history/logs.
-        # The HttpOnly cookie below carries the session; the SPA should call /me.
         response = RedirectResponse(url=settings.frontend_url, status_code=302)
         _set_auth_cookie(response, access_token)
         return response
@@ -199,8 +198,7 @@ async def google_callback(
     except HTTPException:
         raise
     except Exception as e:
-        # Never leak the underlying exception text to the client.
-        logger.exception("Google OAuth callback failed: %s", e)
+        logger.exception("GitHub OAuth callback failed: %s", e)
         raise HTTPException(status_code=500, detail="Authentication failed")
 
 
@@ -208,13 +206,7 @@ async def google_callback(
 async def get_current_user(
     user: User = Depends(_get_current_user_dep),
 ):
-    """Return the current authenticated user.
-
-    Auth comes from the shared dependency which reads either the
-    ``Authorization: Bearer …`` header or the ``access_token`` cookie set
-    by the login endpoints — keeping this route in sync with every other
-    authenticated endpoint.
-    """
+    """Return the current authenticated user."""
     return {
         "id": user.id,
         "email": user.email,
@@ -256,7 +248,6 @@ async def dev_login(
     db: Session = Depends(get_db),
 ):
     """Development-only login. Disabled outside debug/dev_auth_bypass mode."""
-    # Hard gate: refuse if running in production-like mode.
     if settings.is_production or not (settings.debug or settings.dev_auth_bypass):
         raise HTTPException(status_code=404, detail="Not found")
 
@@ -269,7 +260,7 @@ async def dev_login(
     user = db.query(User).filter(User.email == email).first()
     if not user:
         user = User(
-            google_id=f"dev:{email}",
+            github_id=f"dev:{email}",
             email=email,
             email_verified=True,
             full_name=payload.name or email,
@@ -304,7 +295,5 @@ async def dev_login(
             },
         }
     )
-    # Mirror the Google callback: drop the JWT into an HttpOnly cookie so
-    # subsequent `api.me()` calls from the SPA carry credentials.
     _set_auth_cookie(response, access_token)
     return response

@@ -109,12 +109,12 @@ Base = declarative_base()
 
 # TODO: Add relationships to other tables after review:
 class User(Base):
-    """User accounts for Google OAuth authentication."""
-    
+    """User accounts for GitHub OAuth authentication."""
+
     __tablename__ = "users"
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
-    google_id = Column(String(255), unique=True, nullable=False, index=True)
+    github_id = Column(String(255), unique=True, nullable=False, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     email_verified = Column(Boolean, default=False, nullable=False)
     full_name = Column(String(255), nullable=True)
@@ -132,7 +132,7 @@ class User(Base):
     last_login_at = Column(DateTime(timezone=True), nullable=True)
     
     __table_args__ = (
-        Index('idx_users_google_id', 'google_id'),
+        Index('idx_users_github_id', 'github_id'),
         Index('idx_users_email', 'email'),
         Index('idx_users_role', 'role'),
         Index('idx_users_default_org', 'default_org_id'),
@@ -141,7 +141,7 @@ class User(Base):
     
     def __repr__(self) -> str:
         return (
-            f"<User(id={self.id}, full_name='{self.full_name}', email='{self.email}', google_id='{self.google_id}')>"
+            f"<User(id={self.id}, full_name='{self.full_name}', email='{self.email}', github_id='{self.github_id}')>"
         )
 
 

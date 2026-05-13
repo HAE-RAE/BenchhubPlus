@@ -92,16 +92,16 @@ class Settings(BaseSettings):
         description="Secret key for API key encryption (Fernet). Used to encrypt/decrypt model API keys stored in database."
     )
     
-    # Google OAuth Configuration
-    google_client_id: str = Field(
-        description="Google OAuth Client ID"
+    # GitHub OAuth Configuration
+    github_client_id: str = Field(
+        description="GitHub OAuth Client ID"
     )
-    google_client_secret: str = Field(
-        description="Google OAuth Client Secret"
+    github_client_secret: str = Field(
+        description="GitHub OAuth Client Secret"
     )
-    google_redirect_uri: str = Field(
-        default="http://localhost:8001/api/v1/auth/google/callback",
-        description="Google OAuth Redirect URI"
+    github_redirect_uri: str = Field(
+        default="http://localhost:8001/api/v1/auth/github/callback",
+        description="GitHub OAuth Redirect URI"
     )
     
     # JWT Configuration
