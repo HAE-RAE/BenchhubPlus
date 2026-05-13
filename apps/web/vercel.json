@@ -1,4 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "https://benchhubplus-production.up.railway.app/api/:path*" }
+  ]
 }
