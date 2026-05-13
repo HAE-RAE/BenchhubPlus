@@ -323,7 +323,7 @@ class EvaluationChatPlanner:
                     tools=TOOL_SCHEMAS,
                     tool_choice="auto",
                     temperature=self.temperature,
-                    max_tokens=700,
+                    max_completion_tokens=700,
                 )
             except Exception as exc:
                 logger.exception("Chat planner LLM call failed: %s", exc)
