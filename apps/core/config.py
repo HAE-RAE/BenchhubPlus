@@ -79,7 +79,7 @@ class Settings(BaseSettings):
         description="OpenAI API key for planner agent"
     )
     planner_model: str = Field(
-        default="gpt-4", 
+        default="gpt-5.4-mini",
         description="Model to use for planning agent"
     )
     planner_temperature: float = Field(
